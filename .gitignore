@@ -1,0 +1,17 @@
+node_modules/
+dist/
+*.local
+.DS_Store
+
+# Capacitor / Android build output
+android/app/build/
+android/build/
+android/.gradle/
+android/local.properties
+android/app/release/
+*.keystore
+!android/app/debug.keystore
+
+# Never commit the OpenAI key
+.env
+.env.local

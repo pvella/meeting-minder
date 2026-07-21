@@ -142,7 +142,7 @@ function DashboardLayoutContent({
           // animation while dragging keeps the resize from lagging the cursor.
           className={`border-r border-sidebar-border/60 ${isResizing ? "[&_*]:!transition-none" : ""}`}
         >
-          <SidebarHeader className="h-20 justify-center px-3">
+          <SidebarHeader className="min-h-20 justify-center px-3 pt-[env(safe-area-inset-top)]">
             <div className="flex items-center gap-3 transition-all w-full">
               <button
                 onClick={toggleSidebar}
@@ -232,7 +232,10 @@ function DashboardLayoutContent({
 
       <SidebarInset>
         {isMobile && (
-          <div className="flex border-b h-14 items-center justify-between bg-background/95 px-2 backdrop-blur supports-[backdrop-filter]:backdrop-blur sticky top-0 z-40">
+          // Android 15+ renders apps edge-to-edge, so "top-0" is the physical
+          // top of the screen. Without the inset the trigger sits under the
+          // status bar, where the system swallows taps on it.
+          <div className="flex border-b min-h-14 items-center justify-between bg-background/95 px-2 pt-[env(safe-area-inset-top)] backdrop-blur supports-[backdrop-filter]:backdrop-blur sticky top-0 z-40">
             <div className="flex items-center gap-2">
               <SidebarTrigger className="h-9 w-9 rounded-lg bg-background" />
               <div className="flex items-center gap-3">
@@ -245,7 +248,15 @@ function DashboardLayoutContent({
             </div>
           </div>
         )}
-        <main className="flex-1">{children}</main>
+        {/* Unfolded, this device is wide enough to skip the mobile header, so
+            the top inset has to be applied to the content instead. */}
+        <main
+          className={`flex-1 pb-[env(safe-area-inset-bottom)] ${
+            isMobile ? "" : "pt-[env(safe-area-inset-top)]"
+          }`}
+        >
+          {children}
+        </main>
       </SidebarInset>
     </>
   );

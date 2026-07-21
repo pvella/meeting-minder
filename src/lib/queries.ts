@@ -95,6 +95,30 @@ export function useSummarizeMeeting() {
   });
 }
 
+export function useUpdateMeetingSummary() {
+  const invalidate = useInvalidateMeetingViews();
+  return useMutation({
+    mutationFn: (input: Parameters<typeof meetings.updateMeetingSummary>[0]) =>
+      meetings.updateMeetingSummary(input),
+    onSuccess: (_result, variables) => invalidate(variables.meetingId),
+  });
+}
+
+export function useDeleteMeeting() {
+  const queryClient = useQueryClient();
+  const invalidate = useInvalidateMeetingViews();
+  return useMutation({
+    mutationFn: (input: Parameters<typeof meetings.deleteMeeting>[0]) =>
+      meetings.deleteMeeting(input),
+    onSuccess: async (_result, variables) => {
+      // Drop the detail entry outright — refetching a deleted meeting would
+      // just throw NOT_FOUND.
+      queryClient.removeQueries({ queryKey: queryKeys.meeting(variables.meetingId) });
+      await invalidate();
+    },
+  });
+}
+
 export function useCreateMeeting() {
   return useMutation({
     mutationFn: (input: { startedAtMs: number }) => meetings.createMeeting(input),

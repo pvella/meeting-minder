@@ -17,6 +17,9 @@ const saveMeetingSummary = vi.fn();
 const purgeMeetingProcessingArtifacts = vi.fn();
 const listCompletedMeetingsBetween = vi.fn();
 const saveDailySummary = vi.fn();
+const deleteMeetingRow = vi.fn();
+const deleteDailySummary = vi.fn();
+const updateMeetingSummaryContent = vi.fn();
 
 vi.mock("@/lib/db", () => ({
   getMeeting,
@@ -27,6 +30,9 @@ vi.mock("@/lib/db", () => ({
   purgeMeetingProcessingArtifacts,
   listCompletedMeetingsBetween,
   saveDailySummary,
+  deleteMeeting: deleteMeetingRow,
+  deleteDailySummary,
+  updateMeetingSummaryContent,
 }));
 
 vi.mock("@/lib/transcription", () => ({
@@ -35,10 +41,16 @@ vi.mock("@/lib/transcription", () => ({
 }));
 
 const generateMeetingSummary = vi.fn();
+const generateDailySummary = vi.fn();
 vi.mock("./meetingSummary", () => ({ generateMeetingSummary }));
-vi.mock("./dailySummary", () => ({ generateDailySummary: vi.fn() }));
+vi.mock("./dailySummary", () => ({ generateDailySummary }));
 
-const { getMeetingDetail: loadDetail, summarizeMeeting } = await import("./meetings");
+const {
+  getMeetingDetail: loadDetail,
+  summarizeMeeting,
+  deleteMeeting,
+  updateMeetingSummary,
+} = await import("./meetings");
 
 function processingMeeting(overrides: Record<string, unknown> = {}) {
   return {
@@ -168,5 +180,87 @@ describe("meeting processing recovery", () => {
     // The transcript is the only way to retry, so it must survive a failure.
     expect(purgeMeetingProcessingArtifacts).not.toHaveBeenCalled();
     expect(failMeetingProcessing).toHaveBeenCalled();
+  });
+});
+
+describe("editing and deleting", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getMeeting.mockResolvedValue(processingMeeting({ status: "completed" }));
+  });
+
+  it("drops blanked-out rows instead of persisting empty entries", async () => {
+    await updateMeetingSummary({
+      meetingId: 8,
+      summaryOverview: "  A corrected overview.  ",
+      keyTopics: [
+        { topic: "Real topic", details: "Details" },
+        { topic: "   ", details: "orphaned details" },
+      ],
+      decisions: [{ decision: "", context: "no decision" }],
+      actionItems: [{ task: "Do the thing", owner: "Paul", dueDate: "Friday" }],
+    });
+
+    expect(updateMeetingSummaryContent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        summaryOverview: "A corrected overview.",
+        keyTopics: [{ topic: "Real topic", details: "Details" }],
+        decisions: [],
+        actionItems: [{ task: "Do the thing", owner: "Paul", dueDate: "Friday" }],
+      }),
+    );
+  });
+
+  it("does not spend an API call rebuilding the day when a summary is edited", async () => {
+    await updateMeetingSummary({
+      meetingId: 8,
+      summaryOverview: "Corrected.",
+      keyTopics: [],
+      decisions: [],
+      actionItems: [],
+    });
+
+    expect(generateDailySummary).not.toHaveBeenCalled();
+    expect(saveDailySummary).not.toHaveBeenCalled();
+  });
+
+  it("rejects an empty overview", async () => {
+    await expect(
+      updateMeetingSummary({
+        meetingId: 8,
+        summaryOverview: "   ",
+        keyTopics: [],
+        decisions: [],
+        actionItems: [],
+      }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(updateMeetingSummaryContent).not.toHaveBeenCalled();
+  });
+
+  it("rebuilds the day's roll-up after a delete so it stops citing the meeting", async () => {
+    listCompletedMeetingsBetween.mockResolvedValue([
+      processingMeeting({ id: 9, status: "completed" }),
+    ]);
+    generateDailySummary.mockResolvedValue({
+      overview: "o",
+      highlights: [],
+      actionItems: [],
+    });
+
+    await deleteMeeting({ meetingId: 8, day });
+
+    expect(deleteMeetingRow).toHaveBeenCalledWith(8);
+    expect(saveDailySummary).toHaveBeenCalled();
+  });
+
+  it("removes the day entirely when its last meeting is deleted", async () => {
+    listCompletedMeetingsBetween.mockResolvedValue([]);
+
+    await deleteMeeting({ meetingId: 8, day });
+
+    // Otherwise the day survives as a roll-up announcing it has nothing to say.
+    expect(deleteDailySummary).toHaveBeenCalledWith(day.localDate);
+    expect(saveDailySummary).not.toHaveBeenCalled();
+    expect(generateDailySummary).not.toHaveBeenCalled();
   });
 });

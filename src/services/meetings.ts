@@ -1,5 +1,11 @@
 import { getBlockingAudioChunks } from "@shared/audioChunk";
-import type { LocalDay, TranscriptDraft } from "@shared/meeting";
+import type {
+  ActionItem,
+  Decision,
+  KeyTopic,
+  LocalDay,
+  TranscriptDraft,
+} from "@shared/meeting";
 import * as db from "@/lib/db";
 import { isTranscriptionError, transcribeAudioBlob } from "@/lib/transcription";
 import { generateDailySummary } from "./dailySummary";
@@ -233,12 +239,66 @@ export async function rebuildDailySummary(day: LocalDay) {
     dayStartAtMs: day.dayStartAtMs,
     dayEndAtMs: day.dayEndAtMs,
   });
+
+  // Deleting the last meeting of a day should remove the day, not leave behind
+  // a roll-up that says there was nothing to roll up.
+  if (meetings.length === 0) {
+    await db.deleteDailySummary(day.localDate);
+    return undefined;
+  }
+
   const content = await generateDailySummary(meetings);
   return db.saveDailySummary({
     localDate: day.localDate,
     timezone: day.timezone,
     content,
   });
+}
+
+/**
+ * Applies user corrections to a generated summary. The daily roll-up is
+ * intentionally NOT rebuilt here: regenerating it costs an API call, and doing
+ * that on every keystroke-level correction would be a surprising way to spend
+ * the user's money. The roll-up refreshes next time a meeting on that day is
+ * summarized or deleted.
+ */
+export async function updateMeetingSummary(input: {
+  meetingId: number;
+  summaryOverview: string;
+  keyTopics: KeyTopic[];
+  decisions: Decision[];
+  actionItems: ActionItem[];
+}) {
+  const existing = await db.getMeeting(input.meetingId);
+  if (!existing) throw new ServiceError("NOT_FOUND", "Meeting not found");
+
+  const overview = input.summaryOverview.trim();
+  if (!overview) {
+    throw new ServiceError("BAD_REQUEST", "The summary overview cannot be empty");
+  }
+
+  return db.updateMeetingSummaryContent({
+    meetingId: input.meetingId,
+    summaryOverview: overview,
+    // Drop rows the user blanked out rather than persisting empty entries.
+    keyTopics: input.keyTopics.filter(item => item.topic.trim()),
+    decisions: input.decisions.filter(item => item.decision.trim()),
+    actionItems: input.actionItems.filter(item => item.task.trim()),
+  });
+}
+
+/**
+ * Deletes a meeting and rebuilds that day's roll-up, which would otherwise go
+ * on citing a meeting that no longer exists. Unlike an edit, this is rare and
+ * leaving stale references would be actively wrong, so the API call is worth it.
+ */
+export async function deleteMeeting(input: { meetingId: number; day: LocalDay }) {
+  const existing = await db.getMeeting(input.meetingId);
+  if (!existing) throw new ServiceError("NOT_FOUND", "Meeting not found");
+
+  await db.deleteMeeting(input.meetingId);
+  await rebuildDailySummary(input.day);
+  return { success: true as const };
 }
 
 export async function listDailySummaries() {

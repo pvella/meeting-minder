@@ -42,7 +42,9 @@ export default function Home() {
                 <div className="mic-core"><Mic2 className="h-8 w-8" /></div>
               </div>
               <p className="font-mono text-5xl font-medium tracking-[-0.05em] text-white sm:text-7xl">{formatTimer(recorder.elapsedMs)}</p>
-              <p className="mt-3 text-sm text-white/55">{recorder.isRecording ? `${recorder.capturedChunkCount} captured · ${recorder.uploadingChunks} uploading · ${recorder.transcribedChunkCount} transcribed · ${recorder.pendingChunks} processing` : "Your next meeting begins when you press record"}</p>
+              {/* `isRecording` is false while stopping, so the idle copy would
+                  otherwise appear under a timer still showing elapsed time. */}
+              <p className="mt-3 text-sm text-white/55">{recorder.isRecording ? `${recorder.capturedChunkCount} captured · ${recorder.uploadingChunks} uploading · ${recorder.transcribedChunkCount} transcribed · ${recorder.pendingChunks} processing` : recorder.status === "stopping" ? "Finishing the recording and writing the summary…" : "Your next meeting begins when you press record"}</p>
 
               <div className="mt-9 flex h-20 w-full max-w-xl items-center justify-center gap-1.5" aria-label="Live audio level">
                 {Array.from({ length: 34 }, (_, index) => {

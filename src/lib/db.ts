@@ -1,6 +1,9 @@
 import { and, asc, desc, eq, gte, lt } from "drizzle-orm";
 import type {
+  ActionItem,
   DailySummaryContent,
+  Decision,
+  KeyTopic,
   MeetingSummary,
   TranscriptDraft,
 } from "@shared/meeting";
@@ -361,6 +364,40 @@ export async function saveMeetingSummary(input: {
       updatedAtMs: now,
     })
     .where(eq(meetings.id, input.meetingId));
+}
+
+/**
+ * Overwrites the generated summary with user-edited content. Deliberately does
+ * not touch `summaryGeneratedAtMs` or `status`: this is a correction to an
+ * existing summary, not a regeneration.
+ */
+export async function updateMeetingSummaryContent(input: {
+  meetingId: number;
+  summaryOverview: string;
+  keyTopics: KeyTopic[];
+  decisions: Decision[];
+  actionItems: ActionItem[];
+}) {
+  await db
+    .update(meetings)
+    .set({
+      summaryOverview: input.summaryOverview,
+      keyTopics: input.keyTopics,
+      decisions: input.decisions,
+      actionItems: input.actionItems,
+      updatedAtMs: Date.now(),
+    })
+    .where(eq(meetings.id, input.meetingId));
+  return getMeeting(input.meetingId);
+}
+
+/** Chunks and transcript segments go too, via ON DELETE CASCADE. */
+export async function deleteMeeting(meetingId: number) {
+  await db.delete(meetings).where(eq(meetings.id, meetingId));
+}
+
+export async function deleteDailySummary(localDate: string) {
+  await db.delete(dailySummaries).where(eq(dailySummaries.localDate, localDate));
 }
 
 export async function failMeetingProcessing(input: {

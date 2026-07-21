@@ -1,183 +1,118 @@
-import {
-  bigint,
-  index,
-  int,
-  json,
-  mysqlEnum,
-  mysqlTable,
-  text,
-  timestamp,
-  uniqueIndex,
-  varchar,
-} from "drizzle-orm/mysql-core";
+import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 import type {
   ActionItem,
   DailyActionItem,
   Decision,
   KeyTopic,
-} from "../shared/meeting";
+} from "@shared/meeting";
 
 /**
- * Core user table backing auth flow.
- * Extend this file with additional tables as your product grows.
- * Columns use camelCase to match both database fields and generated types.
+ * On-device schema. This app is single-user by construction — the database
+ * lives in the app's private storage and the OS is the security boundary — so
+ * there is no `users` table and no `userId` column anywhere. The Manus build
+ * scoped every query by userId; that guarantee now comes from the sandbox
+ * rather than from a WHERE clause.
+ *
+ * All `*AtMs` columns are epoch milliseconds stored as SQLite INTEGER, which is
+ * 64-bit and holds them without precision loss.
  */
-export const users = mysqlTable("users", {
-  /**
-   * Surrogate primary key. Auto-incremented numeric value managed by the database.
-   * Use this for relations between tables.
-   */
-  id: int("id").autoincrement().primaryKey(),
-  /** Manus OAuth identifier (openId) returned from the OAuth callback. Unique per user. */
-  openId: varchar("openId", { length: 64 }).notNull().unique(),
-  name: text("name"),
-  email: varchar("email", { length: 320 }),
-  loginMethod: varchar("loginMethod", { length: 64 }),
-  role: mysqlEnum("role", ["user", "admin"]).default("user").notNull(),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-  lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
-});
 
-export type User = typeof users.$inferSelect;
-export type InsertUser = typeof users.$inferInsert;
-
-export const meetings = mysqlTable(
+export const meetings = sqliteTable(
   "meetings",
   {
-    id: int("id").autoincrement().primaryKey(),
-    userId: int("userId")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
-    title: varchar("title", { length: 200 }).notNull().default("Untitled meeting"),
-    status: mysqlEnum("status", [
-      "recording",
-      "processing",
-      "completed",
-      "failed",
-    ])
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    title: text("title").notNull().default("Untitled meeting"),
+    status: text("status", {
+      enum: ["recording", "processing", "completed", "failed"],
+    })
       .notNull()
       .default("recording"),
-    startedAtMs: bigint("startedAtMs", { mode: "number" }).notNull(),
-    endedAtMs: bigint("endedAtMs", { mode: "number" }),
-    durationMs: int("durationMs").notNull().default(0),
+    startedAtMs: integer("startedAtMs").notNull(),
+    endedAtMs: integer("endedAtMs"),
+    durationMs: integer("durationMs").notNull().default(0),
     summaryOverview: text("summaryOverview"),
-    keyTopics: json("keyTopics").$type<KeyTopic[]>(),
-    decisions: json("decisions").$type<Decision[]>(),
-    actionItems: json("actionItems").$type<ActionItem[]>(),
-    summaryGeneratedAtMs: bigint("summaryGeneratedAtMs", { mode: "number" }),
+    keyTopics: text("keyTopics", { mode: "json" }).$type<KeyTopic[]>(),
+    decisions: text("decisions", { mode: "json" }).$type<Decision[]>(),
+    actionItems: text("actionItems", { mode: "json" }).$type<ActionItem[]>(),
+    summaryGeneratedAtMs: integer("summaryGeneratedAtMs"),
     failureReason: text("failureReason"),
-    createdAtMs: bigint("createdAtMs", { mode: "number" }).notNull(),
-    updatedAtMs: bigint("updatedAtMs", { mode: "number" }).notNull(),
+    createdAtMs: integer("createdAtMs").notNull(),
+    updatedAtMs: integer("updatedAtMs").notNull(),
   },
-  table => ({
-    userStartedIndex: index("meetings_user_started_idx").on(
-      table.userId,
-      table.startedAtMs,
-    ),
-  }),
+  table => [index("meetings_started_idx").on(table.startedAtMs)],
 );
 
-export const audioChunks = mysqlTable(
+export const audioChunks = sqliteTable(
   "audioChunks",
   {
-    id: int("id").autoincrement().primaryKey(),
-    meetingId: int("meetingId")
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    meetingId: integer("meetingId")
       .notNull()
       .references(() => meetings.id, { onDelete: "cascade" }),
-    userId: int("userId")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
-    sequence: int("sequence").notNull(),
-    mimeType: varchar("mimeType", { length: 100 }).notNull(),
-    sizeBytes: int("sizeBytes").notNull(),
-    startedAtMs: bigint("startedAtMs", { mode: "number" }).notNull(),
-    endedAtMs: bigint("endedAtMs", { mode: "number" }).notNull(),
-    durationMs: int("durationMs").notNull(),
-    transcriptionStatus: mysqlEnum("transcriptionStatus", [
-      "pending",
-      "processing",
-      "completed",
-      "failed",
-    ])
+    sequence: integer("sequence").notNull(),
+    mimeType: text("mimeType").notNull(),
+    sizeBytes: integer("sizeBytes").notNull(),
+    startedAtMs: integer("startedAtMs").notNull(),
+    endedAtMs: integer("endedAtMs").notNull(),
+    durationMs: integer("durationMs").notNull(),
+    transcriptionStatus: text("transcriptionStatus", {
+      enum: ["pending", "processing", "completed", "failed"],
+    })
       .notNull()
       .default("pending"),
     errorMessage: text("errorMessage"),
-    createdAtMs: bigint("createdAtMs", { mode: "number" }).notNull(),
+    createdAtMs: integer("createdAtMs").notNull(),
   },
-  table => ({
-    meetingSequenceUnique: uniqueIndex("audio_chunks_meeting_sequence_uq").on(
+  table => [
+    uniqueIndex("audio_chunks_meeting_sequence_uq").on(
       table.meetingId,
       table.sequence,
     ),
-    userMeetingIndex: index("audio_chunks_user_meeting_idx").on(
-      table.userId,
-      table.meetingId,
-    ),
-  }),
+  ],
 );
 
-export const dailySummaries = mysqlTable(
+export const dailySummaries = sqliteTable(
   "dailySummaries",
   {
-    id: int("id").autoincrement().primaryKey(),
-    userId: int("userId")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
-    localDate: varchar("localDate", { length: 10 }).notNull(),
-    timezone: varchar("timezone", { length: 100 }).notNull(),
-    status: mysqlEnum("status", ["completed", "failed"])
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    // Unique on its own now that summaries are no longer partitioned by user.
+    localDate: text("localDate").notNull(),
+    timezone: text("timezone").notNull(),
+    status: text("status", { enum: ["completed", "failed"] })
       .notNull()
       .default("completed"),
     overview: text("overview").notNull(),
-    highlights: json("highlights").$type<string[]>().notNull(),
-    actionItems: json("actionItems").$type<DailyActionItem[]>().notNull(),
-    generatedAtMs: bigint("generatedAtMs", { mode: "number" }).notNull(),
+    highlights: text("highlights", { mode: "json" }).$type<string[]>().notNull(),
+    actionItems: text("actionItems", { mode: "json" })
+      .$type<DailyActionItem[]>()
+      .notNull(),
+    generatedAtMs: integer("generatedAtMs").notNull(),
     failureReason: text("failureReason"),
-    createdAtMs: bigint("createdAtMs", { mode: "number" }).notNull(),
-    updatedAtMs: bigint("updatedAtMs", { mode: "number" }).notNull(),
+    createdAtMs: integer("createdAtMs").notNull(),
+    updatedAtMs: integer("updatedAtMs").notNull(),
   },
-  table => ({
-    userDateUnique: uniqueIndex("daily_summaries_user_date_uq").on(
-      table.userId,
-      table.localDate,
-    ),
-    userDateIndex: index("daily_summaries_user_date_idx").on(
-      table.userId,
-      table.localDate,
-    ),
-  }),
+  table => [uniqueIndex("daily_summaries_date_uq").on(table.localDate)],
 );
 
-export const transcriptSegments = mysqlTable(
+export const transcriptSegments = sqliteTable(
   "transcriptSegments",
   {
-    id: int("id").autoincrement().primaryKey(),
-    meetingId: int("meetingId")
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    meetingId: integer("meetingId")
       .notNull()
       .references(() => meetings.id, { onDelete: "cascade" }),
-    userId: int("userId")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
-    audioChunkId: int("audioChunkId")
+    audioChunkId: integer("audioChunkId")
       .notNull()
       .references(() => audioChunks.id, { onDelete: "cascade" }),
-    sequence: int("sequence").notNull(),
-    startMs: int("startMs").notNull(),
-    endMs: int("endMs").notNull(),
+    sequence: integer("sequence").notNull(),
+    startMs: integer("startMs").notNull(),
+    endMs: integer("endMs").notNull(),
     text: text("text").notNull(),
-    createdAtMs: bigint("createdAtMs", { mode: "number" }).notNull(),
+    createdAtMs: integer("createdAtMs").notNull(),
   },
-  table => ({
-    meetingSequenceIndex: index("transcript_meeting_sequence_idx").on(
-      table.meetingId,
-      table.sequence,
-    ),
-    userMeetingIndex: index("transcript_user_meeting_idx").on(
-      table.userId,
-      table.meetingId,
-    ),
-  }),
+  table => [
+    index("transcript_meeting_sequence_idx").on(table.meetingId, table.sequence),
+  ],
 );
 
 export type Meeting = typeof meetings.$inferSelect;

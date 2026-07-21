@@ -1,5 +1,8 @@
 node_modules/
 dist/
+
+# Restored by the postinstall script from node_modules/sql.js
+public/assets/sql-wasm.wasm
 *.local
 .DS_Store
 

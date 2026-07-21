@@ -1,7 +1,7 @@
 import type { CapacitorConfig } from "@capacitor/cli";
 
 const config: CapacitorConfig = {
-  appId: "au.com.powertechconsulting.meetingminder",
+  appId: "com.pvella.meetingminder",
   appName: "MeetingMinder",
   webDir: "dist",
   android: {

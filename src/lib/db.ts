@@ -1,172 +1,66 @@
 import { and, asc, desc, eq, gte, lt } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/mysql2";
-import {
-  audioChunks,
-  dailySummaries,
-  InsertUser,
-  meetings,
-  transcriptSegments,
-  users,
-} from "../drizzle/schema";
 import type {
   DailySummaryContent,
   MeetingSummary,
   TranscriptDraft,
-} from "../shared/meeting";
-import { ENV } from './_core/env';
+} from "@shared/meeting";
+import {
+  audioChunks,
+  dailySummaries,
+  meetings,
+  transcriptSegments,
+} from "./schema";
+import { db, withTransaction } from "./sqlite";
 
-let _db: ReturnType<typeof drizzle> | null = null;
+/**
+ * On-device query layer. Ported from the Manus server's db.ts — the query
+ * bodies are unchanged apart from the removal of every `userId` predicate,
+ * which no longer exists (see schema.ts). Function names dropped their
+ * `ForUser` suffix accordingly.
+ */
 
-// Lazily create the drizzle instance so local tooling can run without a DB.
-export async function getDb() {
-  if (!_db && process.env.DATABASE_URL) {
-    try {
-      _db = drizzle(process.env.DATABASE_URL);
-    } catch (error) {
-      console.warn("[Database] Failed to connect:", error);
-      _db = null;
-    }
-  }
-  return _db;
-}
-
-export async function upsertUser(user: InsertUser): Promise<void> {
-  if (!user.openId) {
-    throw new Error("User openId is required for upsert");
-  }
-
-  const db = await getDb();
-  if (!db) {
-    console.warn("[Database] Cannot upsert user: database not available");
-    return;
-  }
-
-  try {
-    const values: InsertUser = {
-      openId: user.openId,
-    };
-    const updateSet: Record<string, unknown> = {};
-
-    const textFields = ["name", "email", "loginMethod"] as const;
-    type TextField = (typeof textFields)[number];
-
-    const assignNullable = (field: TextField) => {
-      const value = user[field];
-      if (value === undefined) return;
-      const normalized = value ?? null;
-      values[field] = normalized;
-      updateSet[field] = normalized;
-    };
-
-    textFields.forEach(assignNullable);
-
-    if (user.lastSignedIn !== undefined) {
-      values.lastSignedIn = user.lastSignedIn;
-      updateSet.lastSignedIn = user.lastSignedIn;
-    }
-    if (user.role !== undefined) {
-      values.role = user.role;
-      updateSet.role = user.role;
-    } else if (user.openId === ENV.ownerOpenId) {
-      values.role = 'admin';
-      updateSet.role = 'admin';
-    }
-
-    if (!values.lastSignedIn) {
-      values.lastSignedIn = new Date();
-    }
-
-    if (Object.keys(updateSet).length === 0) {
-      updateSet.lastSignedIn = new Date();
-    }
-
-    await db.insert(users).values(values).onDuplicateKeyUpdate({
-      set: updateSet,
-    });
-  } catch (error) {
-    console.error("[Database] Failed to upsert user:", error);
-    throw error;
-  }
-}
-
-export async function getUserByOpenId(openId: string) {
-  const db = await getDb();
-  if (!db) {
-    console.warn("[Database] Cannot get user: database not available");
-    return undefined;
-  }
-
-  const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
-
-  return result.length > 0 ? result[0] : undefined;
-}
-
-async function requireDb() {
-  const db = await getDb();
-  if (!db) throw new Error("Database is not available");
-  return db;
-}
-
-export async function createMeetingForUser(input: {
-  userId: number;
-  startedAtMs: number;
-}) {
-  const db = await requireDb();
+export async function createMeeting(input: { startedAtMs: number }) {
   const now = Date.now();
   const [created] = await db
     .insert(meetings)
     .values({
-      userId: input.userId,
       startedAtMs: input.startedAtMs,
       createdAtMs: now,
       updatedAtMs: now,
     })
-    .$returningId();
+    .returning({ id: meetings.id });
 
-  return getMeetingForUser(created.id, input.userId);
+  return getMeeting(created.id);
 }
 
-export async function getMeetingForUser(meetingId: number, userId: number) {
-  const db = await requireDb();
+export async function getMeeting(meetingId: number) {
   const [meeting] = await db
     .select()
     .from(meetings)
-    .where(and(eq(meetings.id, meetingId), eq(meetings.userId, userId)))
+    .where(eq(meetings.id, meetingId))
     .limit(1);
   return meeting;
 }
 
-export async function listMeetingsForUser(userId: number) {
-  const db = await requireDb();
-  return db
-    .select()
-    .from(meetings)
-    .where(eq(meetings.userId, userId))
-    .orderBy(desc(meetings.startedAtMs));
+export async function listMeetings() {
+  return db.select().from(meetings).orderBy(desc(meetings.startedAtMs));
 }
 
-export async function getMeetingDetailForUser(meetingId: number, userId: number) {
-  const db = await requireDb();
-  const meeting = await getMeetingForUser(meetingId, userId);
+export async function getMeetingDetail(meetingId: number) {
+  const meeting = await getMeeting(meetingId);
   if (!meeting) return undefined;
 
   const segments = await db
     .select()
     .from(transcriptSegments)
-    .where(
-      and(
-        eq(transcriptSegments.meetingId, meetingId),
-        eq(transcriptSegments.userId, userId),
-      ),
-    )
+    .where(eq(transcriptSegments.meetingId, meetingId))
     .orderBy(asc(transcriptSegments.sequence));
 
   return { ...meeting, segments };
 }
 
-export async function addAudioChunkForUser(input: {
+export async function addAudioChunk(input: {
   meetingId: number;
-  userId: number;
   sequence: number;
   mimeType: string;
   sizeBytes: number;
@@ -174,7 +68,6 @@ export async function addAudioChunkForUser(input: {
   endedAtMs: number;
   durationMs: number;
 }) {
-  const db = await requireDb();
   const [created] = await db
     .insert(audioChunks)
     .values({
@@ -182,40 +75,30 @@ export async function addAudioChunkForUser(input: {
       transcriptionStatus: "processing",
       createdAtMs: Date.now(),
     })
-    .$returningId();
+    .returning({ id: audioChunks.id });
   return created.id;
 }
 
-export async function renameMeetingForUser(input: {
+export async function renameMeeting(input: {
   meetingId: number;
-  userId: number;
   title: string;
 }) {
-  const db = await requireDb();
   await db
     .update(meetings)
     .set({ title: input.title, updatedAtMs: Date.now() })
-    .where(
-      and(
-        eq(meetings.id, input.meetingId),
-        eq(meetings.userId, input.userId),
-      ),
-    );
-  return getMeetingForUser(input.meetingId, input.userId);
+    .where(eq(meetings.id, input.meetingId));
+  return getMeeting(input.meetingId);
 }
 
-export async function listCompletedMeetingsForUserBetween(input: {
-  userId: number;
+export async function listCompletedMeetingsBetween(input: {
   dayStartAtMs: number;
   dayEndAtMs: number;
 }) {
-  const db = await requireDb();
   return db
     .select()
     .from(meetings)
     .where(
       and(
-        eq(meetings.userId, input.userId),
         eq(meetings.status, "completed"),
         gte(meetings.startedAtMs, input.dayStartAtMs),
         lt(meetings.startedAtMs, input.dayEndAtMs),
@@ -224,45 +107,31 @@ export async function listCompletedMeetingsForUserBetween(input: {
     .orderBy(asc(meetings.startedAtMs));
 }
 
-export async function getDailySummaryForUser(input: {
-  userId: number;
-  localDate: string;
-}) {
-  const db = await requireDb();
+export async function getDailySummary(localDate: string) {
   const [summary] = await db
     .select()
     .from(dailySummaries)
-    .where(
-      and(
-        eq(dailySummaries.userId, input.userId),
-        eq(dailySummaries.localDate, input.localDate),
-      ),
-    )
+    .where(eq(dailySummaries.localDate, localDate))
     .limit(1);
   return summary;
 }
 
-export async function listDailySummariesForUser(userId: number) {
-  const db = await requireDb();
+export async function listDailySummaries() {
   return db
     .select()
     .from(dailySummaries)
-    .where(eq(dailySummaries.userId, userId))
     .orderBy(desc(dailySummaries.localDate));
 }
 
 export async function saveDailySummary(input: {
-  userId: number;
   localDate: string;
   timezone: string;
   content: DailySummaryContent;
 }) {
-  const db = await requireDb();
   const now = Date.now();
   await db
     .insert(dailySummaries)
     .values({
-      userId: input.userId,
       localDate: input.localDate,
       timezone: input.timezone,
       status: "completed",
@@ -274,7 +143,8 @@ export async function saveDailySummary(input: {
       createdAtMs: now,
       updatedAtMs: now,
     })
-    .onDuplicateKeyUpdate({
+    .onConflictDoUpdate({
+      target: dailySummaries.localDate,
       set: {
         timezone: input.timezone,
         status: "completed",
@@ -286,50 +156,33 @@ export async function saveDailySummary(input: {
         updatedAtMs: now,
       },
     });
-  return getDailySummaryForUser({
-    userId: input.userId,
-    localDate: input.localDate,
-  });
+  return getDailySummary(input.localDate);
 }
 
-export async function purgeMeetingProcessingArtifacts(input: {
-  meetingId: number;
-  userId: number;
-}) {
-  const db = await requireDb();
-  await db.transaction(async tx => {
-    await tx
+/**
+ * Deletes the transient processing artifacts once a summary is durable. This is
+ * the product's core privacy guarantee: the audio and raw transcript do not
+ * outlive summarization.
+ */
+export async function purgeMeetingProcessingArtifacts(meetingId: number) {
+  await withTransaction(async () => {
+    await db
       .delete(transcriptSegments)
-      .where(
-        and(
-          eq(transcriptSegments.meetingId, input.meetingId),
-          eq(transcriptSegments.userId, input.userId),
-        ),
-      );
-    await tx
-      .delete(audioChunks)
-      .where(
-        and(
-          eq(audioChunks.meetingId, input.meetingId),
-          eq(audioChunks.userId, input.userId),
-        ),
-      );
+      .where(eq(transcriptSegments.meetingId, meetingId));
+    await db.delete(audioChunks).where(eq(audioChunks.meetingId, meetingId));
   });
 }
 
-export async function getAudioChunkForUserBySequence(input: {
+export async function getAudioChunkBySequence(input: {
   meetingId: number;
-  userId: number;
   sequence: number;
 }) {
-  const db = await requireDb();
   const [chunk] = await db
     .select()
     .from(audioChunks)
     .where(
       and(
         eq(audioChunks.meetingId, input.meetingId),
-        eq(audioChunks.userId, input.userId),
         eq(audioChunks.sequence, input.sequence),
       ),
     )
@@ -337,11 +190,7 @@ export async function getAudioChunkForUserBySequence(input: {
   return chunk;
 }
 
-export async function listAudioChunkStatesForMeeting(input: {
-  meetingId: number;
-  userId: number;
-}) {
-  const db = await requireDb();
+export async function listAudioChunkStatesForMeeting(meetingId: number) {
   return db
     .select({
       id: audioChunks.id,
@@ -352,66 +201,42 @@ export async function listAudioChunkStatesForMeeting(input: {
       durationMs: audioChunks.durationMs,
     })
     .from(audioChunks)
-    .where(
-      and(
-        eq(audioChunks.meetingId, input.meetingId),
-        eq(audioChunks.userId, input.userId),
-      ),
-    )
+    .where(eq(audioChunks.meetingId, meetingId))
     .orderBy(asc(audioChunks.sequence));
 }
 
-export async function getTranscriptSegmentsForAudioChunk(input: {
-  audioChunkId: number;
-  userId: number;
-}) {
-  const db = await requireDb();
+export async function getTranscriptSegmentsForAudioChunk(audioChunkId: number) {
   return db
     .select()
     .from(transcriptSegments)
-    .where(
-      and(
-        eq(transcriptSegments.audioChunkId, input.audioChunkId),
-        eq(transcriptSegments.userId, input.userId),
-      ),
-    )
+    .where(eq(transcriptSegments.audioChunkId, audioChunkId))
     .orderBy(asc(transcriptSegments.sequence));
 }
 
-export async function markAudioChunkProcessing(input: {
-  audioChunkId: number;
-  userId: number;
-}) {
-  const db = await requireDb();
+export async function markAudioChunkProcessing(audioChunkId: number) {
   await db
     .update(audioChunks)
     .set({ transcriptionStatus: "processing", errorMessage: null })
-    .where(
-      and(
-        eq(audioChunks.id, input.audioChunkId),
-        eq(audioChunks.userId, input.userId),
-      ),
-    );
+    .where(eq(audioChunks.id, audioChunkId));
 }
 
 export async function completeAudioChunkTranscription(input: {
   audioChunkId: number;
   meetingId: number;
-  userId: number;
   chunkStartedAtMs: number;
   chunkSequence: number;
   segments: TranscriptDraft[];
 }) {
-  const db = await requireDb();
   const now = Date.now();
 
-  await db.transaction(async tx => {
+  await withTransaction(async () => {
     if (input.segments.length > 0) {
-      await tx.insert(transcriptSegments).values(
+      await db.insert(transcriptSegments).values(
         input.segments.map((segment, index) => ({
           meetingId: input.meetingId,
-          userId: input.userId,
           audioChunkId: input.audioChunkId,
+          // Sparse numbering keeps segments globally ordered without
+          // renumbering earlier chunks as later ones arrive.
           sequence: input.chunkSequence * 1000 + index,
           startMs: Math.max(0, input.chunkStartedAtMs + segment.startMs),
           endMs: Math.max(0, input.chunkStartedAtMs + segment.endMs),
@@ -421,76 +246,48 @@ export async function completeAudioChunkTranscription(input: {
       );
     }
 
-    await tx
+    await db
       .update(audioChunks)
       .set({ transcriptionStatus: "completed", errorMessage: null })
-      .where(
-        and(
-          eq(audioChunks.id, input.audioChunkId),
-          eq(audioChunks.userId, input.userId),
-        ),
-      );
+      .where(eq(audioChunks.id, input.audioChunkId));
 
-    await tx
+    await db
       .update(meetings)
       .set({ updatedAtMs: now })
-      .where(
-        and(
-          eq(meetings.id, input.meetingId),
-          eq(meetings.userId, input.userId),
-        ),
-      );
+      .where(eq(meetings.id, input.meetingId));
   });
 }
 
 export async function failAudioChunkTranscription(input: {
   audioChunkId: number;
-  userId: number;
   errorMessage: string;
 }) {
-  const db = await requireDb();
   const [chunk] = await db
     .select({ meetingId: audioChunks.meetingId })
     .from(audioChunks)
-    .where(
-      and(
-        eq(audioChunks.id, input.audioChunkId),
-        eq(audioChunks.userId, input.userId),
-      ),
-    )
+    .where(eq(audioChunks.id, input.audioChunkId))
     .limit(1);
   const now = Date.now();
-  await db.transaction(async tx => {
-    await tx
+
+  await withTransaction(async () => {
+    await db
       .update(audioChunks)
       .set({ transcriptionStatus: "failed", errorMessage: input.errorMessage })
-      .where(
-        and(
-          eq(audioChunks.id, input.audioChunkId),
-          eq(audioChunks.userId, input.userId),
-        ),
-      );
+      .where(eq(audioChunks.id, input.audioChunkId));
     if (chunk) {
-      await tx
+      await db
         .update(meetings)
         .set({ updatedAtMs: now })
-        .where(
-          and(
-            eq(meetings.id, chunk.meetingId),
-            eq(meetings.userId, input.userId),
-          ),
-        );
+        .where(eq(meetings.id, chunk.meetingId));
     }
   });
 }
 
 export async function markMeetingProcessing(input: {
   meetingId: number;
-  userId: number;
   endedAtMs: number;
 }) {
-  const db = await requireDb();
-  const meeting = await getMeetingForUser(input.meetingId, input.userId);
+  const meeting = await getMeeting(input.meetingId);
   if (!meeting) return false;
 
   await db
@@ -502,28 +299,25 @@ export async function markMeetingProcessing(input: {
       updatedAtMs: Date.now(),
       failureReason: null,
     })
-    .where(
-      and(
-        eq(meetings.id, input.meetingId),
-        eq(meetings.userId, input.userId),
-      ),
-    );
+    .where(eq(meetings.id, input.meetingId));
   return true;
 }
 
-export async function splitMeetingForUser(input: {
+/**
+ * Closes the current meeting and opens its successor atomically, so a silence
+ * boundary never leaves the recorder without a meeting to write into.
+ */
+export async function splitMeeting(input: {
   meetingId: number;
-  userId: number;
   endedAtMs: number;
   nextStartedAtMs: number;
 }) {
-  const db = await requireDb();
-  const meeting = await getMeetingForUser(input.meetingId, input.userId);
+  const meeting = await getMeeting(input.meetingId);
   if (!meeting) return undefined;
   const now = Date.now();
 
-  const nextId = await db.transaction(async tx => {
-    await tx
+  const nextId = await withTransaction(async () => {
+    await db
       .update(meetings)
       .set({
         status: "processing",
@@ -532,34 +326,26 @@ export async function splitMeetingForUser(input: {
         updatedAtMs: now,
         failureReason: null,
       })
-      .where(
-        and(
-          eq(meetings.id, input.meetingId),
-          eq(meetings.userId, input.userId),
-        ),
-      );
+      .where(eq(meetings.id, input.meetingId));
 
-    const [next] = await tx
+    const [next] = await db
       .insert(meetings)
       .values({
-        userId: input.userId,
         startedAtMs: input.nextStartedAtMs,
         createdAtMs: now,
         updatedAtMs: now,
       })
-      .$returningId();
+      .returning({ id: meetings.id });
     return next.id;
   });
 
-  return getMeetingForUser(nextId, input.userId);
+  return getMeeting(nextId);
 }
 
 export async function saveMeetingSummary(input: {
   meetingId: number;
-  userId: number;
   summary: MeetingSummary;
 }) {
-  const db = await requireDb();
   const now = Date.now();
   await db
     .update(meetings)
@@ -574,20 +360,13 @@ export async function saveMeetingSummary(input: {
       failureReason: null,
       updatedAtMs: now,
     })
-    .where(
-      and(
-        eq(meetings.id, input.meetingId),
-        eq(meetings.userId, input.userId),
-      ),
-    );
+    .where(eq(meetings.id, input.meetingId));
 }
 
 export async function failMeetingProcessing(input: {
   meetingId: number;
-  userId: number;
   failureReason: string;
 }) {
-  const db = await requireDb();
   await db
     .update(meetings)
     .set({
@@ -595,10 +374,5 @@ export async function failMeetingProcessing(input: {
       failureReason: input.failureReason,
       updatedAtMs: Date.now(),
     })
-    .where(
-      and(
-        eq(meetings.id, input.meetingId),
-        eq(meetings.userId, input.userId),
-      ),
-    );
+    .where(eq(meetings.id, input.meetingId));
 }

@@ -111,6 +111,7 @@ export function useMeetingRecorder() {
   const lastVoiceAtRef = useRef(Date.now());
   const lastLevelPaintAtRef = useRef(0);
   const silenceThresholdSecondsRef = useRef(silenceThresholdSeconds);
+  const wakeLockRef = useRef<WakeLockSentinel | null>(null);
   const performSplitRef = useRef<(reason: SplitReason) => Promise<void>>(
     async () => undefined,
   );
@@ -382,6 +383,32 @@ export function useMeetingRecorder() {
     [],
   );
 
+  /**
+   * This build records only while foregrounded. The silence detector runs on
+   * requestAnimationFrame and the chunk rotation on setTimeout, both of which
+   * stop or throttle the moment the screen sleeps — so a screen wake lock is
+   * load-bearing here, not a nicety. Android drops the lock whenever the page
+   * is hidden, hence the re-acquire on visibilitychange below.
+   */
+  const acquireWakeLock = useCallback(async () => {
+    if (!("wakeLock" in navigator)) return;
+    try {
+      wakeLockRef.current = await navigator.wakeLock.request("screen");
+    } catch (wakeLockError) {
+      console.warn("[recorder] screen wake lock unavailable", wakeLockError);
+    }
+  }, []);
+
+  const releaseWakeLock = useCallback(async () => {
+    const sentinel = wakeLockRef.current;
+    wakeLockRef.current = null;
+    try {
+      await sentinel?.release();
+    } catch {
+      // Already released by the system; nothing to do.
+    }
+  }, []);
+
   const startRecording = useCallback(async () => {
     if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
       setStatus("error");
@@ -423,10 +450,12 @@ export function useMeetingRecorder() {
       setLastSplitReason(null);
       startMediaRecorder(stream, meeting.id, startedAtMs);
       startAudioAnalysis(stream);
+      void acquireWakeLock();
       setStatus("recording");
       await refreshMeetings();
     } catch (startError) {
       stream?.getTracks().forEach(track => track.stop());
+      void releaseWakeLock();
       setStatus("error");
       setError(
         startError instanceof Error
@@ -434,7 +463,14 @@ export function useMeetingRecorder() {
           : "Microphone access could not be started.",
       );
     }
-  }, [createMeeting, refreshMeetings, startAudioAnalysis, startMediaRecorder]);
+  }, [
+    acquireWakeLock,
+    createMeeting,
+    refreshMeetings,
+    releaseWakeLock,
+    startAudioAnalysis,
+    startMediaRecorder,
+  ]);
 
   const performSplit = useCallback(
     async (reason: SplitReason) => {
@@ -522,6 +558,7 @@ export function useMeetingRecorder() {
     const endedAtMs = Date.now();
     try {
       stopAudioAnalysis();
+      void releaseWakeLock();
       await stopMediaRecorder();
       streamRef.current?.getTracks().forEach(track => track.stop());
       streamRef.current = null;
@@ -542,7 +579,14 @@ export function useMeetingRecorder() {
           : "The recording could not be finalized.",
       );
     }
-  }, [finalizeMeeting, status, stopAudioAnalysis, stopMediaRecorder, summarizeAfterUploads]);
+  }, [
+    finalizeMeeting,
+    releaseWakeLock,
+    status,
+    stopAudioAnalysis,
+    stopMediaRecorder,
+    summarizeAfterUploads,
+  ]);
 
   const retryFailedChunks = useCallback(async () => {
     setError(null);
@@ -590,6 +634,20 @@ export function useMeetingRecorder() {
     silenceThresholdSecondsRef.current = silenceThresholdSeconds;
   }, [silenceThresholdSeconds]);
 
+  // Android releases the wake lock whenever the page is hidden, so it has to be
+  // taken again on return or the screen will sleep mid-meeting.
+  useEffect(() => {
+    if (status !== "recording" && status !== "splitting") return;
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible" && !wakeLockRef.current) {
+        void acquireWakeLock();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () =>
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, [acquireWakeLock, status]);
+
   useEffect(
     () => () => {
       if (animationFrameRef.current !== null) {
@@ -600,6 +658,7 @@ export function useMeetingRecorder() {
         window.clearTimeout(recorderTimerRef.current);
       }
       if (recorderRef.current?.state === "recording") recorderRef.current.stop();
+      void wakeLockRef.current?.release().catch(() => undefined);
       streamRef.current?.getTracks().forEach(track => track.stop());
       if (audioContextRef.current?.state !== "closed") {
         void audioContextRef.current?.close();

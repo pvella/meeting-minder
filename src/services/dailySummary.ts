@@ -1,7 +1,7 @@
 import { z } from "zod";
-import type { Meeting } from "../../drizzle/schema";
-import type { DailySummaryContent } from "../../shared/meeting";
-import { invokeLLM } from "../_core/llm";
+import type { DailySummaryContent } from "@shared/meeting";
+import { invokeLLM } from "@/lib/openai";
+import type { Meeting } from "@/lib/schema";
 
 const dailySummarySchema = z.object({
   overview: z.string().min(1),
@@ -55,7 +55,6 @@ export async function generateDailySummary(
 
   try {
     const response = await invokeLLM({
-      model: "gpt-5-mini",
       messages: [
         {
           role: "system",
@@ -67,23 +66,20 @@ export async function generateDailySummary(
           content: meetings.map(formatMeeting).join("\n"),
         },
       ],
-      response_format: {
-        type: "json_schema",
-        json_schema: {
-          name: "daily_summary",
-          strict: true,
-          schema: {
-            type: "object",
-            properties: {
-              overview: { type: "string" },
-              highlights: {
-                type: "array",
-                items: { type: "string" },
-              },
+      jsonSchema: {
+        name: "daily_summary",
+        strict: true,
+        schema: {
+          type: "object",
+          properties: {
+            overview: { type: "string" },
+            highlights: {
+              type: "array",
+              items: { type: "string" },
             },
-            required: ["overview", "highlights"],
-            additionalProperties: false,
           },
+          required: ["overview", "highlights"],
+          additionalProperties: false,
         },
       },
     });

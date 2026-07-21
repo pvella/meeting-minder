@@ -4,7 +4,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatDuration, shortDate, timeOfDay } from "@/lib/dates";
-import { trpc } from "@/lib/trpc";
+import { useMeetings } from "@/lib/queries";
 import { ArrowUpRight, Clock3, FileText, Search, Sparkles } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Link } from "wouter";
@@ -12,7 +12,7 @@ import { Link } from "wouter";
 const statusLabel = { recording: "Recording", processing: "Summarizing", completed: "Ready", failed: "Needs attention" } as const;
 
 export default function MeetingHistory() {
-  const { data: meetings = [], isLoading } = trpc.meeting.list.useQuery();
+  const { data: meetings = [], isLoading } = useMeetings();
   const [query, setQuery] = useState("");
   const filtered = useMemo(() => meetings.filter(meeting => `${meeting.title} ${meeting.summaryOverview ?? ""}`.toLowerCase().includes(query.toLowerCase())), [meetings, query]);
 

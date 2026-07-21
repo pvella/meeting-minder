@@ -6,7 +6,11 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatDuration, getLocalDay, longDate, timeOfDay } from "@/lib/dates";
-import { trpc } from "@/lib/trpc";
+import {
+  useMeetingDetail,
+  useRenameMeeting,
+  useSummarizeMeeting,
+} from "@/lib/queries";
 import {
   AlertCircle,
   ArrowLeft,
@@ -27,15 +31,11 @@ import { Link, useParams } from "wouter";
 export default function MeetingDetail() {
   const params = useParams<{ id: string }>();
   const meetingId = Number(params.id);
-  const utils = trpc.useUtils();
-  const { data: meeting, isLoading } = trpc.meeting.detail.useQuery(
-    { meetingId },
-    {
-      enabled: Number.isInteger(meetingId) && meetingId > 0,
-      refetchInterval: query =>
-        query.state.data?.status === "processing" ? 5_000 : false,
-    },
-  );
+  const { data: meeting, isLoading } = useMeetingDetail(meetingId, {
+    enabled: Number.isInteger(meetingId) && meetingId > 0,
+    refetchInterval: query =>
+      query.state.data?.status === "processing" ? 5_000 : false,
+  });
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState("");
 
@@ -43,27 +43,13 @@ export default function MeetingDetail() {
     if (meeting) setTitle(meeting.title);
   }, [meeting]);
 
-  const rename = trpc.meeting.rename.useMutation({
-    onSuccess: async () => {
-      setEditing(false);
-      await Promise.all([
-        utils.meeting.detail.invalidate({ meetingId }),
-        utils.meeting.list.invalidate(),
-        utils.dailySummary.list.invalidate(),
-        utils.dailySummary.detail.invalidate(),
-      ]);
-    },
-  });
-  const retrySummary = trpc.meeting.summarize.useMutation({
-    onSuccess: async () => {
-      await Promise.all([
-        utils.meeting.detail.invalidate({ meetingId }),
-        utils.meeting.list.invalidate(),
-        utils.dailySummary.list.invalidate(),
-        utils.dailySummary.detail.invalidate(),
-      ]);
-    },
-  });
+  // Both hooks invalidate the meeting, list and daily-summary views themselves.
+  const rename = useRenameMeeting();
+  const retrySummary = useSummarizeMeeting();
+
+  useEffect(() => {
+    if (rename.isSuccess) setEditing(false);
+  }, [rename.isSuccess]);
 
   if (isLoading) {
     return (

@@ -2,12 +2,12 @@ import { PageHeader } from "@/components/PageHeader";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getLocalDayFromKey } from "@/lib/dates";
-import { trpc } from "@/lib/trpc";
+import { useDailySummaries } from "@/lib/queries";
 import { ArrowUpRight, CalendarDays, Sparkles } from "lucide-react";
 import { Link } from "wouter";
 
 export default function DailySummaries() {
-  const { data: days = [], isLoading } = trpc.dailySummary.list.useQuery();
+  const { data: days = [], isLoading } = useDailySummaries();
   return <div className="min-h-screen"><PageHeader eyebrow="Daily roll-ups" title="The shape of each day." description="See the themes, progress, decisions, and open commitments across every completed meeting—then follow the links into any individual summary." />
     <div className="p-5 sm:p-8 lg:p-10">{isLoading ? <div className="grid gap-4 md:grid-cols-2">{Array.from({ length: 4 }, (_, index) => <Skeleton key={index} className="h-72 rounded-[1.5rem]" />)}</div> : days.length ? <div className="grid gap-5 md:grid-cols-2">{days.map(day => { const date = getLocalDayFromKey(day.localDate); return <Link key={day.id} href={`/days/${day.localDate}`}><Card className="summary-card group h-full rounded-[1.75rem] border-0 p-7 shadow-sm ring-1 ring-border/60"><div className="flex items-start justify-between"><div className="brand-mark h-11 w-11"><CalendarDays className="h-5 w-5" /></div><ArrowUpRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-primary" /></div><p className="mt-7 text-xs font-bold uppercase tracking-[0.15em] text-primary">{new Date(date.dayStartAtMs).toLocaleDateString(undefined, { weekday: "long" })}</p><h2 className="mt-2 font-display text-3xl">{new Date(date.dayStartAtMs).toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })}</h2><p className="mt-4 line-clamp-4 text-sm leading-6 text-muted-foreground">{day.overview}</p><div className="mt-6 flex items-center gap-2 border-t border-border/60 pt-4 text-xs font-semibold text-muted-foreground"><Sparkles className="h-3.5 w-3.5 text-primary" />{day.highlights.length} daily {day.highlights.length === 1 ? "highlight" : "highlights"}</div></Card></Link>; })}</div> : <div className="empty-panel flex min-h-[430px] flex-col items-center justify-center rounded-[2rem] p-8 text-center"><div className="brand-mark h-14 w-14"><CalendarDays className="h-6 w-6" /></div><h2 className="mt-6 font-display text-3xl">No daily summaries yet.</h2><p className="mt-3 max-w-md text-sm leading-6 text-muted-foreground">A daily roll-up appears automatically after your first completed meeting summary.</p><Link href="/" className="mt-6 inline-flex rounded-full bg-primary px-5 py-2.5 text-sm font-bold text-primary-foreground">Record a meeting</Link></div>}</div>
   </div>;

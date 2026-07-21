@@ -1,4 +1,12 @@
-import { trpc } from "@/lib/trpc";
+import { getLocalDay } from "@/lib/dates";
+import {
+  useCreateMeeting,
+  useFinalizeMeeting,
+  useInvalidateMeetingViews,
+  useSplitMeeting,
+  useSummarizeMeeting,
+  useTranscribeChunk,
+} from "@/lib/queries";
 import { shouldSplitForSilence } from "@shared/segmentation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -15,7 +23,10 @@ type SplitReason = "manual" | "silence";
 type ChunkPayload = {
   meetingId: number;
   sequence: number;
-  audioBase64: string;
+  // Held as a Blob now. The Manus build base64-encoded every chunk to push it
+  // through a JSON tRPC payload; the transcription call posts multipart from
+  // this process, so the encoding step is gone.
+  audio: Blob;
   mimeType: string;
   chunkStartedAtMs: number;
   chunkEndedAtMs: number;
@@ -31,21 +42,6 @@ type LiveTranscriptSegment = {
   text: string;
 };
 
-function getLocalDay(timestampMs: number) {
-  const date = new Date(timestampMs);
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  const dayStart = new Date(year, date.getMonth(), date.getDate());
-  const dayEnd = new Date(year, date.getMonth(), date.getDate() + 1);
-  return {
-    localDate: `${year}-${month}-${day}`,
-    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
-    dayStartAtMs: dayStart.getTime(),
-    dayEndAtMs: dayEnd.getTime(),
-  };
-}
-
 const CHUNK_INTERVAL_MS = 10_000;
 const MIN_MEETING_DURATION_MS = 15_000;
 const VOICE_RMS_THRESHOLD = 0.018;
@@ -60,18 +56,6 @@ function chooseMimeType() {
   return candidates.find(candidate => MediaRecorder.isTypeSupported(candidate));
 }
 
-async function blobToBase64(blob: Blob) {
-  const bytes = new Uint8Array(await blob.arrayBuffer());
-  let binary = "";
-  const batchSize = 32_768;
-  for (let index = 0; index < bytes.length; index += batchSize) {
-    const batch = bytes.subarray(index, index + batchSize);
-    const values = Array.from(batch);
-    binary += String.fromCharCode(...values);
-  }
-  return window.btoa(binary);
-}
-
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "An audio operation failed.";
 }
@@ -81,12 +65,12 @@ function isTransportError(message: string) {
 }
 
 export function useMeetingRecorder() {
-  const utils = trpc.useUtils();
-  const createMeeting = trpc.meeting.create.useMutation();
-  const transcribeChunk = trpc.meeting.transcribeChunk.useMutation();
-  const splitMeeting = trpc.meeting.split.useMutation();
-  const finalizeMeeting = trpc.meeting.finalize.useMutation();
-  const summarizeMeeting = trpc.meeting.summarize.useMutation();
+  const invalidateMeetingViews = useInvalidateMeetingViews();
+  const createMeeting = useCreateMeeting();
+  const transcribeChunk = useTranscribeChunk();
+  const splitMeeting = useSplitMeeting();
+  const finalizeMeeting = useFinalizeMeeting();
+  const summarizeMeeting = useSummarizeMeeting();
 
   const [status, setStatus] = useState<RecorderStatus>("idle");
   const [activeMeetingId, setActiveMeetingId] = useState<number | null>(null);
@@ -132,8 +116,8 @@ export function useMeetingRecorder() {
   );
 
   const refreshMeetings = useCallback(async () => {
-    await utils.meeting.list.invalidate();
-  }, [utils]);
+    await invalidateMeetingViews();
+  }, [invalidateMeetingViews]);
 
   const addPending = useCallback((meetingId: number, promise: Promise<void>) => {
     const existing = pendingByMeetingRef.current.get(meetingId) ?? new Set();
@@ -197,11 +181,10 @@ export function useMeetingRecorder() {
       setCapturedChunkCount(count => count + 1);
       setUploadingChunks(count => count + 1);
       try {
-        const audioBase64 = await blobToBase64(blob);
         const payload: ChunkPayload = {
           meetingId,
           sequence,
-          audioBase64,
+          audio: blob,
           mimeType,
           chunkStartedAtMs: chunkStartMs,
           chunkEndedAtMs: chunkEndMs,
@@ -323,18 +306,16 @@ export function useMeetingRecorder() {
           ...getLocalDay(startedAtMs),
         });
         pendingSummaryByMeetingRef.current.delete(meetingId);
-        await utils.dailySummary.list.invalidate();
       } catch (summaryError) {
         if (hasFailedChunks) {
           pendingSummaryByMeetingRef.current.set(meetingId, startedAtMs);
         }
         throw summaryError;
       } finally {
-        await refreshMeetings();
-        await utils.meeting.detail.invalidate({ meetingId });
+        await invalidateMeetingViews(meetingId);
       }
     },
-    [refreshMeetings, summarizeMeeting, utils, waitForPendingMeetingChunks],
+    [invalidateMeetingViews, summarizeMeeting, waitForPendingMeetingChunks],
   );
 
   const stopAudioAnalysis = useCallback(() => {

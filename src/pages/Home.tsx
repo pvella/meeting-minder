@@ -8,7 +8,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Slider } from "@/components/ui/slider";
 import { useMeetingRecorder } from "@/hooks/useMeetingRecorder";
 import { formatTimer } from "@/lib/dates";
-import { trpc } from "@/lib/trpc";
+import { useMeetings } from "@/lib/queries";
 import { AlertCircle, CheckCircle2, CircleStop, LockKeyhole, Mic2, RefreshCw, Scissors, ShieldCheck, Sparkles, Waves } from "lucide-react";
 import { useState } from "react";
 import { Link } from "wouter";
@@ -16,7 +16,7 @@ import { Link } from "wouter";
 export default function Home() {
   const recorder = useMeetingRecorder();
   const [consentOpen, setConsentOpen] = useState(false);
-  const { data: meetings = [] } = trpc.meeting.list.useQuery(undefined, {
+  const { data: meetings = [] } = useMeetings({
     refetchInterval: recorder.isRecording ? 5_000 : false,
   });
   const recentCompleted = meetings.filter(meeting => meeting.status === "completed").slice(0, 3);

@@ -1,4 +1,4 @@
-import { useAuth } from "@/_core/hooks/useAuth";
+import { ApiKeySetup, useApiKeyStatus } from "@/components/ApiKeySetup";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -19,13 +19,13 @@ import {
   SidebarTrigger,
   useSidebar,
 } from "@/components/ui/sidebar";
-import { startLogin } from "@/const";
+import { clearApiKey } from "@/lib/settings";
 import { useIsMobile } from "@/hooks/useMobile";
-import { CalendarDays, History, LogOut, Mic2, PanelLeft, Sparkles } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { CalendarDays, History, KeyRound, Mic2, PanelLeft, Smartphone } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
-import { Button } from "./ui/button";
 
 const menuItems = [
   { icon: Mic2, label: "Record", path: "/" },
@@ -47,42 +47,19 @@ export default function DashboardLayout({
     const saved = localStorage.getItem(SIDEBAR_WIDTH_KEY);
     return saved ? parseInt(saved, 10) : DEFAULT_WIDTH;
   });
-  const { loading, user } = useAuth();
+  const { data: apiKeyStatus, isLoading } = useApiKeyStatus();
 
   useEffect(() => {
     localStorage.setItem(SIDEBAR_WIDTH_KEY, sidebarWidth.toString());
   }, [sidebarWidth]);
 
-  if (loading) {
+  if (isLoading) {
     return <DashboardLayoutSkeleton />
   }
 
-  if (!user) {
-    return (
-      <div className="login-canvas flex min-h-screen items-center justify-center px-5 py-12">
-        <div className="glass-panel flex w-full max-w-md flex-col gap-8 rounded-[2rem] p-8 sm:p-10">
-          <div className="flex flex-col gap-5">
-            <div className="brand-mark h-12 w-12"><Sparkles className="h-5 w-5" /></div>
-            <div>
-              <p className="eyebrow mb-3">Private meeting intelligence</p>
-              <h1 className="font-display text-4xl tracking-tight text-foreground">
-                Remember the work,<br />not the recording.
-              </h1>
-            </div>
-            <p className="text-sm leading-6 text-muted-foreground">
-              Sign in to capture conversations, keep concise meeting summaries, and connect the day’s decisions in one private workspace.
-            </p>
-          </div>
-          <Button
-            onClick={() => startLogin()}
-            size="lg"
-            className="h-12 w-full rounded-xl shadow-lg shadow-primary/15"
-          >
-            Sign in
-          </Button>
-        </div>
-      </div>
-    );
+  // There is no account to sign into — an OpenAI key is the only prerequisite.
+  if (!apiKeyStatus?.configured) {
+    return <ApiKeySetup />;
   }
 
   return (
@@ -109,7 +86,7 @@ function DashboardLayoutContent({
   children,
   setSidebarWidth,
 }: DashboardLayoutContentProps) {
-  const { user, logout } = useAuth();
+  const queryClient = useQueryClient();
   const [location, setLocation] = useLocation();
   const { state, toggleSidebar } = useSidebar();
   const isCollapsed = state === "collapsed";
@@ -161,8 +138,9 @@ function DashboardLayoutContent({
       <div className="relative" ref={sidebarRef}>
         <Sidebar
           collapsible="icon"
-          className="border-r border-sidebar-border/60"
-          disableTransition={isResizing}
+          // The shadcn Sidebar has no disableTransition prop; suppressing the
+          // animation while dragging keeps the resize from lagging the cursor.
+          className={`border-r border-sidebar-border/60 ${isResizing ? "[&_*]:!transition-none" : ""}`}
         >
           <SidebarHeader className="h-20 justify-center px-3">
             <div className="flex items-center gap-3 transition-all w-full">
@@ -212,26 +190,31 @@ function DashboardLayoutContent({
                 <button className="flex items-center gap-3 rounded-lg px-1 py-1 hover:bg-accent/50 transition-colors w-full text-left group-data-[collapsible=icon]:justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                   <Avatar className="h-9 w-9 border shrink-0">
                     <AvatarFallback className="text-xs font-medium">
-                      {user?.name?.charAt(0).toUpperCase()}
+                      <Smartphone className="h-4 w-4" />
                     </AvatarFallback>
                   </Avatar>
                   <div className="flex-1 min-w-0 group-data-[collapsible=icon]:hidden">
                     <p className="text-sm font-medium truncate leading-none">
-                      {user?.name || "-"}
+                      This device
                     </p>
                     <p className="text-xs text-muted-foreground truncate mt-1.5">
-                      {user?.email || "-"}
+                      Meetings stored locally
                     </p>
                   </div>
                 </button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-48">
+              <DropdownMenuContent align="end" className="w-56">
                 <DropdownMenuItem
-                  onClick={logout}
-                  className="cursor-pointer text-destructive focus:text-destructive"
+                  onClick={async () => {
+                    await clearApiKey();
+                    await queryClient.invalidateQueries({
+                      queryKey: ["apiKeyStatus"],
+                    });
+                  }}
+                  className="cursor-pointer"
                 >
-                  <LogOut className="mr-2 h-4 w-4" />
-                  <span>Sign out</span>
+                  <KeyRound className="mr-2 h-4 w-4" />
+                  <span>Change OpenAI key</span>
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

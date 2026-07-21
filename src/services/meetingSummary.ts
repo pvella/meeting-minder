@@ -1,7 +1,7 @@
 import { z } from "zod";
-import type { TranscriptSegment } from "../../drizzle/schema";
-import type { MeetingSummary } from "../../shared/meeting";
-import { invokeLLM } from "../_core/llm";
+import type { MeetingSummary } from "@shared/meeting";
+import { invokeLLM } from "@/lib/openai";
+import type { TranscriptSegment } from "@/lib/schema";
 
 export const meetingSummarySchema = z.object({
   suggestedTitle: z.string().min(1).max(200),
@@ -130,7 +130,6 @@ export async function generateMeetingSummary(
   }
 
   const response = await invokeLLM({
-    model: "gpt-5-mini",
     messages: [
       {
         role: "system",
@@ -142,13 +141,10 @@ export async function generateMeetingSummary(
         content: `Summarize this timestamped meeting transcript.\n\n${transcript}`,
       },
     ],
-    response_format: {
-      type: "json_schema",
-      json_schema: {
-        name: "meeting_summary",
-        strict: true,
-        schema: responseSchema,
-      },
+    jsonSchema: {
+      name: "meeting_summary",
+      strict: true,
+      schema: responseSchema,
     },
   });
 

@@ -7,7 +7,7 @@ import {
   useSummarizeMeeting,
   useTranscribeChunk,
 } from "@/lib/queries";
-import { shouldSplitForSilence } from "@shared/segmentation";
+import { VoiceActivityDetector } from "@shared/segmentation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 export type RecorderStatus =
@@ -44,7 +44,6 @@ type LiveTranscriptSegment = {
 
 const CHUNK_INTERVAL_MS = 10_000;
 const MIN_MEETING_DURATION_MS = 15_000;
-const VOICE_RMS_THRESHOLD = 0.018;
 
 function chooseMimeType() {
   const candidates = [
@@ -107,8 +106,7 @@ export function useMeetingRecorder() {
   const failedChunksRef = useRef(new Map<string, ChunkPayload>());
   const pendingSummaryByMeetingRef = useRef(new Map<number, number>());
   const splitLockRef = useRef(false);
-  const hasDetectedVoiceRef = useRef(false);
-  const lastVoiceAtRef = useRef(Date.now());
+  const voiceDetectorRef = useRef<VoiceActivityDetector | null>(null);
   const lastLevelPaintAtRef = useRef(0);
   const silenceThresholdSecondsRef = useRef(silenceThresholdSeconds);
   const wakeLockRef = useRef<WakeLockSentinel | null>(null);
@@ -358,16 +356,13 @@ export function useMeetingRecorder() {
           setAudioLevel(Math.min(1, rms * 7));
           lastLevelPaintAtRef.current = now;
         }
-        if (rms >= VOICE_RMS_THRESHOLD) {
-          hasDetectedVoiceRef.current = true;
-          lastVoiceAtRef.current = now;
-        } else {
+        const detector = voiceDetectorRef.current;
+        if (detector) {
+          detector.sample(rms, now);
           if (
-            shouldSplitForSilence({
-              hasDetectedVoice: hasDetectedVoiceRef.current,
+            detector.shouldSplit({
               nowMs: now,
               meetingStartedAtMs: meetingStartedAtRef.current,
-              lastVoiceAtMs: lastVoiceAtRef.current,
               minimumMeetingDurationMs: MIN_MEETING_DURATION_MS,
               silenceThresholdMs: silenceThresholdSecondsRef.current * 1000,
             }) &&
@@ -437,8 +432,7 @@ export function useMeetingRecorder() {
       activeMeetingIdRef.current = meeting.id;
       meetingStartedAtRef.current = startedAtMs;
       sequenceByMeetingRef.current.set(meeting.id, 0);
-      hasDetectedVoiceRef.current = false;
-      lastVoiceAtRef.current = startedAtMs;
+      voiceDetectorRef.current = new VoiceActivityDetector(startedAtMs);
       setActiveMeetingId(meeting.id);
       setMeetingStartedAtMs(startedAtMs);
       setLiveTranscript([]);
@@ -501,8 +495,9 @@ export function useMeetingRecorder() {
         activeMeetingIdRef.current = nextMeeting.id;
         meetingStartedAtRef.current = boundaryAtMs;
         sequenceByMeetingRef.current.set(nextMeeting.id, 0);
-        hasDetectedVoiceRef.current = false;
-        lastVoiceAtRef.current = boundaryAtMs;
+        // Keep the detector's learned room floor; only the voiced/silence
+        // clocks belong to the meeting that just ended.
+        voiceDetectorRef.current?.reset(boundaryAtMs);
         setActiveMeetingId(nextMeeting.id);
         setMeetingStartedAtMs(boundaryAtMs);
         setLiveTranscript([]);

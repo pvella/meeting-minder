@@ -79,9 +79,11 @@ app — `ApiKeySetup` replaced the old sign-in screen.
 2. Chunks are sent to OpenAI as `Blob`s in multipart form data. Failures land in
    `failedChunksRef` keyed `meetingId:sequence` and are replayable via `retryFailedChunks()`.
    This subsystem is load-bearing — chunks cross a network boundary and mobile connections drop.
-3. `startAudioAnalysis` computes RMS per animation frame; when `shouldSplitForSilence`
-   (`src/shared/segmentation.ts`, pure and unit-testable) fires, the client splits the meeting
-   atomically and keeps recording.
+3. `startAudioAnalysis` computes RMS per animation frame and feeds it to the adaptive
+   `VoiceActivityDetector` (`src/shared/segmentation.ts`, pure and unit-testable): voice is
+   loudness relative to a tracked ambient noise floor, not an absolute threshold — a fixed
+   0.018 RMS bar once fragmented a quiet 25-minute meeting into 25 pieces. When it reports
+   sustained silence, the client splits the meeting atomically and keeps recording.
 4. Server-side segment numbering is `chunkSequence * 1000 + index` — sparse, so segments stay
    globally ordered without renumbering earlier chunks.
 5. On stop or split, `summarizeAfterUploads` waits for in-flight chunks, then summarizes the

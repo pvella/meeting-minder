@@ -12,6 +12,10 @@ export type ActionItem = {
   task: string;
   owner: string;
   dueDate: string;
+  /** Short thematic label assigned at summary time; older items may lack one. */
+  topic?: string;
+  /** Set when the user ticks the item off; null/absent while it is open. */
+  completedAtMs?: number | null;
 };
 
 export type MeetingSummary = {

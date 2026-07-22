@@ -22,7 +22,7 @@ import {
 import { clearApiKey } from "@/lib/settings";
 import { useIsMobile } from "@/hooks/useMobile";
 import { useQueryClient } from "@tanstack/react-query";
-import { CalendarDays, History, KeyRound, Mic2, PanelLeft, Smartphone } from "lucide-react";
+import { CalendarDays, History, KeyRound, ListChecks, Mic2, PanelLeft, Smartphone } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
@@ -30,6 +30,7 @@ import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
 const menuItems = [
   { icon: Mic2, label: "Record", path: "/" },
   { icon: History, label: "Meeting summaries", path: "/meetings" },
+  { icon: ListChecks, label: "Action items", path: "/actions" },
   { icon: CalendarDays, label: "Daily summaries", path: "/days" },
 ];
 

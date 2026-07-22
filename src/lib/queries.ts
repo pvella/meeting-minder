@@ -104,6 +104,15 @@ export function useUpdateMeetingSummary() {
   });
 }
 
+export function useSetActionItemCompletion() {
+  const invalidate = useInvalidateMeetingViews();
+  return useMutation({
+    mutationFn: (input: Parameters<typeof meetings.setActionItemCompletion>[0]) =>
+      meetings.setActionItemCompletion(input),
+    onSuccess: (_result, variables) => invalidate(variables.meetingId),
+  });
+}
+
 export function useDeleteMeeting() {
   const queryClient = useQueryClient();
   const invalidate = useInvalidateMeetingViews();

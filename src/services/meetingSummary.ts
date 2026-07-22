@@ -23,6 +23,7 @@ export const meetingSummarySchema = z.object({
       task: z.string().min(1),
       owner: z.string(),
       dueDate: z.string(),
+      topic: z.string().min(1),
     }),
   ),
 });
@@ -76,8 +77,13 @@ const responseSchema = {
             type: "string",
             description: "Stated due date, or 'Not specified'.",
           },
+          topic: {
+            type: "string",
+            description:
+              "Thematic label of one to three words grouping this task. Reuse a key topic name where one fits; reuse the same label for related tasks.",
+          },
         },
-        required: ["task", "owner", "dueDate"],
+        required: ["task", "owner", "dueDate", "topic"],
         additionalProperties: false,
       },
     },

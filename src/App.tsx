@@ -5,6 +5,7 @@ import { Route, Switch } from "wouter";
 import DashboardLayout from "./components/DashboardLayout";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
+import ActionItems from "./pages/ActionItems";
 import DailySummaries from "./pages/DailySummaries";
 import DailySummaryDetail from "./pages/DailySummaryDetail";
 import Home from "./pages/Home";
@@ -18,6 +19,7 @@ function Router() {
         <Route path={"/"} component={Home} />
         <Route path={"/meetings"} component={MeetingHistory} />
         <Route path={"/meetings/:id"} component={MeetingDetail} />
+        <Route path={"/actions"} component={ActionItems} />
         <Route path={"/days"} component={DailySummaries} />
         <Route path={"/days/:localDate"} component={DailySummaryDetail} />
         <Route path={"/404"} component={NotFound} />

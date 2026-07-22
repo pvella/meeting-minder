@@ -288,6 +288,36 @@ export async function updateMeetingSummary(input: {
 }
 
 /**
+ * Ticks a single action item complete or open. Items have no stable id — they
+ * are positional entries in the meeting's JSON array — so they are addressed by
+ * (meetingId, index). The daily roll-up is intentionally not rebuilt: completion
+ * is user bookkeeping, not a change to what the meeting was about, and rebuilding
+ * costs an API call. The daily view reads completion straight from the meeting
+ * rows it already links to.
+ */
+export async function setActionItemCompletion(input: {
+  meetingId: number;
+  index: number;
+  completedAtMs: number | null;
+}) {
+  const meeting = await db.getMeeting(input.meetingId);
+  if (!meeting) throw new ServiceError("NOT_FOUND", "Meeting not found");
+  const actionItems = meeting.actionItems ?? [];
+  const target = actionItems[input.index];
+  if (!target) throw new ServiceError("NOT_FOUND", "Action item not found");
+
+  const next = actionItems.map((item, position) =>
+    position === input.index
+      ? { ...item, completedAtMs: input.completedAtMs }
+      : item,
+  );
+  return db.updateMeetingActionItems({
+    meetingId: input.meetingId,
+    actionItems: next,
+  });
+}
+
+/**
  * Deletes a meeting and rebuilds that day's roll-up, which would otherwise go
  * on citing a meeting that no longer exists. Unlike an edit, this is rare and
  * leaving stale references would be actively wrong, so the API call is worth it.

@@ -20,6 +20,7 @@ const saveDailySummary = vi.fn();
 const deleteMeetingRow = vi.fn();
 const deleteDailySummary = vi.fn();
 const updateMeetingSummaryContent = vi.fn();
+const updateMeetingActionItems = vi.fn();
 
 vi.mock("@/lib/db", () => ({
   getMeeting,
@@ -33,6 +34,7 @@ vi.mock("@/lib/db", () => ({
   deleteMeeting: deleteMeetingRow,
   deleteDailySummary,
   updateMeetingSummaryContent,
+  updateMeetingActionItems,
 }));
 
 vi.mock("@/lib/transcription", () => ({
@@ -50,6 +52,7 @@ const {
   summarizeMeeting,
   deleteMeeting,
   updateMeetingSummary,
+  setActionItemCompletion,
 } = await import("./meetings");
 
 function processingMeeting(overrides: Record<string, unknown> = {}) {
@@ -262,5 +265,72 @@ describe("editing and deleting", () => {
     expect(deleteDailySummary).toHaveBeenCalledWith(day.localDate);
     expect(saveDailySummary).not.toHaveBeenCalled();
     expect(generateDailySummary).not.toHaveBeenCalled();
+  });
+});
+
+describe("action item completion", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getMeeting.mockResolvedValue(
+      processingMeeting({
+        status: "completed",
+        actionItems: [
+          { task: "Rotate the keys", owner: "Paul", dueDate: "Friday", topic: "Security" },
+          { task: "Draft the message", owner: "Olivia", dueDate: "Monday", topic: "BHP" },
+        ],
+      }),
+    );
+  });
+
+  it("ticks a single item complete by index, leaving its siblings untouched", async () => {
+    await setActionItemCompletion({ meetingId: 8, index: 1, completedAtMs: 1_700_000_050_000 });
+
+    expect(updateMeetingActionItems).toHaveBeenCalledWith({
+      meetingId: 8,
+      actionItems: [
+        { task: "Rotate the keys", owner: "Paul", dueDate: "Friday", topic: "Security" },
+        {
+          task: "Draft the message",
+          owner: "Olivia",
+          dueDate: "Monday",
+          topic: "BHP",
+          completedAtMs: 1_700_000_050_000,
+        },
+      ],
+    });
+  });
+
+  it("reopens an item by clearing its completion timestamp", async () => {
+    getMeeting.mockResolvedValue(
+      processingMeeting({
+        status: "completed",
+        actionItems: [
+          { task: "Rotate the keys", owner: "Paul", dueDate: "Friday", topic: "Security", completedAtMs: 123 },
+        ],
+      }),
+    );
+
+    await setActionItemCompletion({ meetingId: 8, index: 0, completedAtMs: null });
+
+    expect(updateMeetingActionItems).toHaveBeenCalledWith({
+      meetingId: 8,
+      actionItems: [
+        { task: "Rotate the keys", owner: "Paul", dueDate: "Friday", topic: "Security", completedAtMs: null },
+      ],
+    });
+  });
+
+  it("does not rebuild the day's roll-up when an item is ticked", async () => {
+    await setActionItemCompletion({ meetingId: 8, index: 0, completedAtMs: 1 });
+
+    expect(generateDailySummary).not.toHaveBeenCalled();
+    expect(saveDailySummary).not.toHaveBeenCalled();
+  });
+
+  it("rejects an out-of-range index rather than corrupting the list", async () => {
+    await expect(
+      setActionItemCompletion({ meetingId: 8, index: 5, completedAtMs: 1 }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect(updateMeetingActionItems).not.toHaveBeenCalled();
   });
 });

@@ -391,6 +391,17 @@ export async function updateMeetingSummaryContent(input: {
   return getMeeting(input.meetingId);
 }
 
+export async function updateMeetingActionItems(input: {
+  meetingId: number;
+  actionItems: ActionItem[];
+}) {
+  await db
+    .update(meetings)
+    .set({ actionItems: input.actionItems, updatedAtMs: Date.now() })
+    .where(eq(meetings.id, input.meetingId));
+  return getMeeting(input.meetingId);
+}
+
 /** Chunks and transcript segments go too, via ON DELETE CASCADE. */
 export async function deleteMeeting(meetingId: number) {
   await db.delete(meetings).where(eq(meetings.id, meetingId));

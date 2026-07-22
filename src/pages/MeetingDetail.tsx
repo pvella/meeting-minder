@@ -18,6 +18,7 @@ import {
   type SummaryDraft,
 } from "@/components/MeetingSummaryEditor";
 import { formatDuration, getLocalDay, longDate, timeOfDay } from "@/lib/dates";
+import { exportMeetingPdf } from "@/lib/pdfExport";
 import {
   useDeleteMeeting,
   useMeetingDetail,
@@ -37,11 +38,13 @@ import {
   PencilLine,
   RefreshCw,
   Save,
+  Share2,
   Sparkles,
   Target,
   Trash2,
 } from "lucide-react";
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import { Link, useLocation, useParams } from "wouter";
 
 export default function MeetingDetail() {
@@ -61,7 +64,22 @@ export default function MeetingDetail() {
 
   const [editingSummary, setEditingSummary] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [, setLocation] = useLocation();
+
+  async function handleExport() {
+    if (!meeting) return;
+    setExporting(true);
+    try {
+      await exportMeetingPdf(meeting);
+    } catch (error) {
+      toast.error("Could not export the PDF", {
+        description: error instanceof Error ? error.message : undefined,
+      });
+    } finally {
+      setExporting(false);
+    }
+  }
 
   // These hooks invalidate the meeting, list and daily-summary views themselves.
   const rename = useRenameMeeting();
@@ -251,6 +269,19 @@ export default function MeetingDetail() {
                 <Button variant="outline" className="bg-card" onClick={() => setEditing(true)}>
                   <Pencil className="mr-2 h-4 w-4" /> Rename
                 </Button>
+                <Button
+                  variant="outline"
+                  className="bg-card"
+                  onClick={handleExport}
+                  disabled={exporting}
+                >
+                  {exporting ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Share2 className="mr-2 h-4 w-4" />
+                  )}
+                  Export PDF
+                </Button>
                 {!editingSummary ? (
                   <Button
                     variant="outline"
@@ -329,7 +360,7 @@ export default function MeetingDetail() {
               <Badge className="rounded-full bg-white/10 text-white hover:bg-white/10">
                 <Sparkles className="mr-2 h-3.5 w-3.5" /> AI summary
               </Badge>
-              <p className="mt-6 font-display text-3xl leading-[1.25] sm:text-4xl">
+              <p className="mt-5 text-lg leading-relaxed sm:text-xl">
                 {meeting.summaryOverview}
               </p>
             </Card>

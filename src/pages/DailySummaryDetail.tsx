@@ -1,15 +1,34 @@
 import { PageHeader } from "@/components/PageHeader";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getLocalDayFromKey } from "@/lib/dates";
+import { exportDailyPdf } from "@/lib/pdfExport";
 import { useDailySummary } from "@/lib/queries";
-import { ArrowLeft, ClipboardCheck, Sparkles } from "lucide-react";
+import { ArrowLeft, ClipboardCheck, Loader2, Share2, Sparkles } from "lucide-react";
+import { useState } from "react";
+import { toast } from "sonner";
 import { Link, useParams } from "wouter";
 
 export default function DailySummaryDetail() {
   const params = useParams<{ localDate: string }>();
   const localDate = params.localDate ?? "";
   const { data: day, isLoading } = useDailySummary(localDate);
+  const [exporting, setExporting] = useState(false);
+
+  async function handleExport() {
+    if (!day) return;
+    setExporting(true);
+    try {
+      await exportDailyPdf(day);
+    } catch (error) {
+      toast.error("Could not export the PDF", {
+        description: error instanceof Error ? error.message : undefined,
+      });
+    } finally {
+      setExporting(false);
+    }
+  }
 
   if (isLoading) {
     return (
@@ -47,6 +66,21 @@ export default function DailySummaryDetail() {
           year: "numeric",
         })}
         description={day.overview}
+        action={
+          <Button
+            variant="outline"
+            className="bg-card"
+            onClick={handleExport}
+            disabled={exporting}
+          >
+            {exporting ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Share2 className="mr-2 h-4 w-4" />
+            )}
+            Export PDF
+          </Button>
+        }
       />
 
       <div className="p-5 sm:p-8 lg:p-10">

@@ -24,7 +24,7 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-background">
-      <PageHeader eyebrow="Live capture" title="Record the conversation." description="Speak naturally. Echo Ledger transcribes in short encrypted requests, detects meeting boundaries, and keeps the useful outcome—not a permanent recording." />
+      <PageHeader eyebrow="Live capture" title="Record the conversation." description="Speak naturally. UnRecorded transcribes in short encrypted requests, detects meeting boundaries, and keeps the useful outcome—not a permanent recording." />
 
       <div className="grid gap-5 p-5 sm:p-8 xl:grid-cols-[minmax(0,1.45fr)_minmax(320px,.75fr)] xl:p-10">
         <Card className={`recording-stage overflow-hidden rounded-[2rem] border-0 p-6 shadow-2xl shadow-emerald-950/15 sm:p-9 ${recorder.isRecording ? "is-live" : ""}`}>

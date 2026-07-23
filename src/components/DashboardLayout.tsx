@@ -155,7 +155,7 @@ function DashboardLayoutContent({
               {!isCollapsed ? (
                 <div className="flex items-center gap-2 min-w-0">
                   <div className="min-w-0">
-                    <span className="block truncate font-display text-xl leading-none">Echo Ledger</span>
+                    <span className="block truncate font-display text-xl leading-none">UnRecorded</span>
                     <span className="mt-1 block text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Meeting memory</span>
                   </div>
                 </div>

@@ -2,7 +2,7 @@ import type { CapacitorConfig } from "@capacitor/cli";
 
 const config: CapacitorConfig = {
   appId: "com.pvella.meetingminder",
-  appName: "MeetingMinder",
+  appName: "UnRecorded",
   webDir: "dist",
   android: {
     // The WebView needs a secure origin for getUserMedia/MediaRecorder to work.

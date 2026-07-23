@@ -203,7 +203,7 @@ export default function MeetingDetail() {
             <p className="mt-3 max-w-lg text-sm leading-6 text-muted-foreground">
               {isFailed
                 ? meeting.failureReason || "The summary service could not complete this meeting. Your meeting record is still private and available to retry."
-                : "Echo Ledger is converting the temporary processing transcript into topics, decisions, and action items."}
+                : "UnRecorded is converting the temporary processing transcript into topics, decisions, and action items."}
             </p>
             {isFailed && !hasFailedAudio ? (
               <Button

@@ -11,6 +11,7 @@ import DailySummaryDetail from "./pages/DailySummaryDetail";
 import Home from "./pages/Home";
 import MeetingDetail from "./pages/MeetingDetail";
 import MeetingHistory from "./pages/MeetingHistory";
+import Settings from "./pages/Settings";
 
 function Router() {
   return (
@@ -22,6 +23,7 @@ function Router() {
         <Route path={"/actions"} component={ActionItems} />
         <Route path={"/days"} component={DailySummaries} />
         <Route path={"/days/:localDate"} component={DailySummaryDetail} />
+        <Route path={"/settings"} component={Settings} />
         <Route path={"/404"} component={NotFound} />
         <Route component={NotFound} />
       </Switch>

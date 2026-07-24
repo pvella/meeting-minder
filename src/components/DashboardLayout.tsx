@@ -19,10 +19,8 @@ import {
   SidebarTrigger,
   useSidebar,
 } from "@/components/ui/sidebar";
-import { clearApiKey } from "@/lib/settings";
 import { useIsMobile } from "@/hooks/useMobile";
-import { useQueryClient } from "@tanstack/react-query";
-import { CalendarDays, History, KeyRound, ListChecks, Mic2, PanelLeft, Smartphone } from "lucide-react";
+import { CalendarDays, History, ListChecks, Mic2, PanelLeft, Settings, Smartphone } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
@@ -32,6 +30,7 @@ const menuItems = [
   { icon: History, label: "Meeting summaries", path: "/meetings" },
   { icon: ListChecks, label: "Action items", path: "/actions" },
   { icon: CalendarDays, label: "Daily summaries", path: "/days" },
+  { icon: Settings, label: "Settings", path: "/settings" },
 ];
 
 const SIDEBAR_WIDTH_KEY = "sidebar-width";
@@ -87,7 +86,6 @@ function DashboardLayoutContent({
   children,
   setSidebarWidth,
 }: DashboardLayoutContentProps) {
-  const queryClient = useQueryClient();
   const [location, setLocation] = useLocation();
   const { state, toggleSidebar } = useSidebar();
   const isCollapsed = state === "collapsed";
@@ -206,16 +204,11 @@ function DashboardLayoutContent({
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56">
                 <DropdownMenuItem
-                  onClick={async () => {
-                    await clearApiKey();
-                    await queryClient.invalidateQueries({
-                      queryKey: ["apiKeyStatus"],
-                    });
-                  }}
+                  onClick={() => setLocation("/settings")}
                   className="cursor-pointer"
                 >
-                  <KeyRound className="mr-2 h-4 w-4" />
-                  <span>Change OpenAI key</span>
+                  <Settings className="mr-2 h-4 w-4" />
+                  <span>Settings</span>
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

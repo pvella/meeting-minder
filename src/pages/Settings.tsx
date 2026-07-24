@@ -15,9 +15,17 @@ import {
   setSummaryModel,
   setTranscriptionModel,
 } from "@/lib/settings";
+import { exportBackup, parseBackup, restoreBackup } from "@/lib/backup";
+import { queryKeys } from "@/lib/queries";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { KeyRound, RotateCcw, Save } from "lucide-react";
-import { useEffect, useState } from "react";
+import {
+  Download,
+  KeyRound,
+  RotateCcw,
+  Save,
+  Upload,
+} from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
 
@@ -44,6 +52,9 @@ export default function Settings() {
   const [summaryModel, setSummaryModelValue] = useState("");
   const [transcriptionModel, setTranscriptionModelValue] = useState("");
   const [saving, setSaving] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Prefill once loaded (the key itself is never read back into the field —
   // leave it blank to keep the existing key, type to replace it).
@@ -88,6 +99,58 @@ export default function Settings() {
     await queryClient.invalidateQueries({ queryKey: ["apiKeyStatus"] });
     toast.success("API key removed.");
     setLocation("/");
+  }
+
+  async function handleExport() {
+    setExporting(true);
+    try {
+      const result = await exportBackup();
+      toast.success(
+        `Exported ${result.meetings} meeting${result.meetings === 1 ? "" : "s"} and ${result.dailySummaries} daily summar${result.dailySummaries === 1 ? "y" : "ies"}.`,
+      );
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Export failed.",
+      );
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  async function handleImportFile(file: File) {
+    setImporting(true);
+    try {
+      const text = await file.text();
+      const backup = parseBackup(text);
+      const result = await restoreBackup(backup);
+      await queryClient.invalidateQueries({ queryKey: queryKeys.meetings });
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.dailySummaries,
+      });
+      const added = result.meetingsAdded + result.dailySummariesAdded;
+      const skipped = result.meetingsSkipped + result.dailySummariesSkipped;
+      if (added === 0) {
+        toast.info(
+          skipped > 0
+            ? "Nothing new to import — everything in that file is already here."
+            : "That backup was empty.",
+        );
+      } else {
+        toast.success(
+          `Imported ${result.meetingsAdded} meeting${result.meetingsAdded === 1 ? "" : "s"}` +
+            (result.dailySummariesAdded > 0
+              ? ` and ${result.dailySummariesAdded} daily summar${result.dailySummariesAdded === 1 ? "y" : "ies"}`
+              : "") +
+            (skipped > 0 ? ` (${skipped} already present, skipped).` : "."),
+        );
+      }
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Import failed.",
+      );
+    } finally {
+      setImporting(false);
+    }
   }
 
   return (
@@ -208,6 +271,52 @@ export default function Settings() {
                 (whisper-1 on OpenAI, or an equivalent whisper route on your
                 gateway), or the transcript timeline will break.
               </p>
+            </section>
+
+            {/* Data — backup / restore */}
+            <section className="flex flex-col gap-4 border-t border-border/60 pt-6">
+              <div>
+                <h2 className="font-display text-lg">Your data</h2>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Meetings live only on this device. Export a backup file you
+                  can keep safe or move to another phone — and import it to
+                  restore. Import is additive and never overwrites what's
+                  already here.
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
+                <Button
+                  onClick={handleExport}
+                  disabled={exporting}
+                  size="lg"
+                  variant="outline"
+                  className="h-11 rounded-xl"
+                >
+                  <Download className="mr-2 h-4 w-4" />
+                  {exporting ? "Exporting…" : "Export backup"}
+                </Button>
+                <Button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={importing}
+                  size="lg"
+                  variant="outline"
+                  className="h-11 rounded-xl"
+                >
+                  <Upload className="mr-2 h-4 w-4" />
+                  {importing ? "Importing…" : "Import backup"}
+                </Button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="application/json,.json"
+                  className="hidden"
+                  onChange={e => {
+                    const file = e.target.files?.[0];
+                    e.target.value = ""; // allow re-selecting the same file
+                    if (file) void handleImportFile(file);
+                  }}
+                />
+              </div>
             </section>
 
             {/* Actions */}

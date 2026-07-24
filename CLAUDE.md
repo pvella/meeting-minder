@@ -9,7 +9,12 @@ transcribes them in ~10s chunks, and produces per-meeting summaries plus a daily
 
 It began as a Manus WebDev app and was detached into a standalone **Capacitor Android** app.
 There is no server, no accounts, and no cloud database: everything is stored in on-device
-SQLite. The only network calls are to the OpenAI API, using a key the user supplies.
+SQLite. The only network calls are to an OpenAI-compatible API, using a key the user
+supplies. The endpoint defaults to OpenAI but is configurable (`api-base-url` preference) to
+any OpenAI-compatible gateway — e.g. a LiteLLM proxy — for both chat and transcription; the
+base URL and model names are set in the "Advanced — custom endpoint" section of the key
+setup screen. See `src/lib/settings.ts` (`getBaseUrl`, `chatCompletionsUrl`,
+`transcriptionsUrl`, `getTranscriptionModel`).
 
 Commit `cc593b8` holds the original flattened Manus snapshot if you need to compare against
 the pre-migration behaviour.
@@ -124,10 +129,12 @@ encryption feature this app disables.
   plus a prompt forbidding invented owners, dates or commitments, and validate with Zod after
   parsing. `dailySummary.ts` degrades to `buildDailySummaryFallback` (mechanical, no LLM) on any
   error, and always sources `actionItems` from the fallback rather than the model.
-- **`whisper-1` is not interchangeable.** It is the only transcription model supporting
-  `response_format: verbose_json`, and the transcript timeline is built entirely from the
-  per-segment timestamps only that format returns. `gpt-4o-transcribe` is cheaper and would
-  silently destroy the feature.
+- **Transcription must return `verbose_json` segments.** On OpenAI this means `whisper-1`
+  specifically — it is the only model supporting `response_format: verbose_json`, and the
+  transcript timeline is built entirely from the per-segment timestamps only that format
+  returns (`gpt-4o-transcribe` is cheaper and would silently destroy the feature). The
+  transcription model is overridable for custom gateways (a LiteLLM whisper route), but the
+  same verbose_json constraint applies to whatever it points at.
 - Timestamps are epoch-ms `integer` columns named `*AtMs`.
 
 ## Testing

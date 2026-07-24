@@ -1,4 +1,4 @@
-import { getSummaryModel, requireApiKey } from "./settings";
+import { chatCompletionsUrl, getSummaryModel, requireApiKey } from "./settings";
 
 /**
  * Minimal OpenAI chat-completions client.
@@ -9,8 +9,6 @@ import { getSummaryModel, requireApiKey } from "./settings";
  * response, so the rest is gone. The retry/backoff behaviour is kept verbatim —
  * that part earns its place on a mobile connection.
  */
-
-const API_URL = "https://api.openai.com/v1/chat/completions";
 
 export type JsonSchema = {
   name: string;
@@ -116,7 +114,7 @@ export async function invokeLLM(params: {
     };
   }
 
-  const response = await fetchWithBackoff(API_URL, {
+  const response = await fetchWithBackoff(await chatCompletionsUrl(), {
     method: "POST",
     headers: {
       "content-type": "application/json",

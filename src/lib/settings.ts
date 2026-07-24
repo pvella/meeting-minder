@@ -11,17 +11,76 @@ import { Preferences } from "@capacitor/preferences";
 
 const API_KEY = "openai-api-key";
 const SUMMARY_MODEL = "summary-model";
+const BASE_URL = "api-base-url";
+const TRANSCRIPTION_MODEL_KEY = "transcription-model";
 
 export const DEFAULT_SUMMARY_MODEL = "gpt-5-mini";
 
 /**
- * whisper-1 is not interchangeable here. It is the only transcription model
- * that supports `response_format: verbose_json`, and this app depends on the
- * per-segment start/end timestamps that only that format returns. The newer
- * gpt-4o-transcribe models return plain text and would break the transcript
- * timeline entirely.
+ * The default endpoint is OpenAI itself. A custom base URL lets the app talk to
+ * any OpenAI-compatible gateway — e.g. a LiteLLM proxy — for both chat
+ * completions and audio transcription. Store just the origin (no `/v1`, no
+ * trailing slash); the endpoint paths are appended by the resolvers below.
  */
-export const TRANSCRIPTION_MODEL = "whisper-1";
+export const DEFAULT_BASE_URL = "https://api.openai.com";
+
+/**
+ * whisper-1 is not interchangeable on OpenAI: it is the only transcription
+ * model that supports `response_format: verbose_json`, and this app depends on
+ * the per-segment start/end timestamps that only that format returns. Against a
+ * custom gateway (LiteLLM) this may instead be whatever alias routes to a
+ * whisper deployment — hence it is overridable, but it must still return
+ * verbose_json segments or the transcript timeline breaks.
+ */
+export const DEFAULT_TRANSCRIPTION_MODEL = "whisper-1";
+
+/** Strip whitespace, trailing slashes, and a trailing `/v1` so callers can
+ *  paste either "https://host" or "https://host/v1" and get the same result. */
+function normalizeBaseUrl(raw: string): string {
+  let url = raw.trim().replace(/\/+$/, "");
+  url = url.replace(/\/v1$/i, "");
+  return url || DEFAULT_BASE_URL;
+}
+
+export async function getBaseUrl(): Promise<string> {
+  const { value } = await Preferences.get({ key: BASE_URL });
+  return value?.trim() ? normalizeBaseUrl(value) : DEFAULT_BASE_URL;
+}
+
+export async function setBaseUrl(url: string): Promise<void> {
+  const trimmed = url.trim();
+  if (!trimmed) {
+    await Preferences.remove({ key: BASE_URL });
+    return;
+  }
+  await Preferences.set({ key: BASE_URL, value: normalizeBaseUrl(trimmed) });
+}
+
+export async function isCustomEndpoint(): Promise<boolean> {
+  return (await getBaseUrl()) !== DEFAULT_BASE_URL;
+}
+
+export async function chatCompletionsUrl(): Promise<string> {
+  return `${await getBaseUrl()}/v1/chat/completions`;
+}
+
+export async function transcriptionsUrl(): Promise<string> {
+  return `${await getBaseUrl()}/v1/audio/transcriptions`;
+}
+
+export async function getTranscriptionModel(): Promise<string> {
+  const { value } = await Preferences.get({ key: TRANSCRIPTION_MODEL_KEY });
+  return value?.trim() || DEFAULT_TRANSCRIPTION_MODEL;
+}
+
+export async function setTranscriptionModel(model: string): Promise<void> {
+  const trimmed = model.trim();
+  if (!trimmed || trimmed === DEFAULT_TRANSCRIPTION_MODEL) {
+    await Preferences.remove({ key: TRANSCRIPTION_MODEL_KEY });
+    return;
+  }
+  await Preferences.set({ key: TRANSCRIPTION_MODEL_KEY, value: trimmed });
+}
 
 export async function getApiKey(): Promise<string | null> {
   const { value } = await Preferences.get({ key: API_KEY });

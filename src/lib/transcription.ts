@@ -1,7 +1,9 @@
 import { fetchWithBackoff } from "./openai";
-import { requireApiKey, TRANSCRIPTION_MODEL } from "./settings";
-
-const API_URL = "https://api.openai.com/v1/audio/transcriptions";
+import {
+  getTranscriptionModel,
+  requireApiKey,
+  transcriptionsUrl,
+} from "./settings";
 
 /** OpenAI's stated upload ceiling for the transcription endpoint. */
 const MAX_AUDIO_BYTES = 25 * 1024 * 1024;
@@ -95,7 +97,7 @@ export async function transcribeAudioBlob(input: {
     input.audio,
     `meeting-chunk.${extensionForMimeType(input.mimeType)}`,
   );
-  formData.append("model", TRANSCRIPTION_MODEL);
+  formData.append("model", await getTranscriptionModel());
   // verbose_json is required: it is what carries the per-segment timestamps the
   // transcript timeline is built from.
   formData.append("response_format", "verbose_json");
@@ -106,7 +108,7 @@ export async function transcribeAudioBlob(input: {
   );
 
   try {
-    const response = await fetchWithBackoff(API_URL, {
+    const response = await fetchWithBackoff(await transcriptionsUrl(), {
       method: "POST",
       headers: { authorization: `Bearer ${apiKey}` },
       body: formData,

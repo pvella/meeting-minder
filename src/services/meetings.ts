@@ -8,7 +8,7 @@ import type {
 } from "@shared/meeting";
 import * as db from "@/lib/db";
 import { isTranscriptionError, transcribeAudioBlob } from "@/lib/transcription";
-import { generateDailySummary } from "./dailySummary";
+import { buildDailySummaryFallback, generateDailySummary } from "./dailySummary";
 import { generateMeetingSummary } from "./meetingSummary";
 
 /**
@@ -256,11 +256,15 @@ export async function rebuildDailySummary(day: LocalDay) {
 }
 
 /**
- * Applies user corrections to a generated summary. The daily roll-up is
- * intentionally NOT rebuilt here: regenerating it costs an API call, and doing
- * that on every keystroke-level correction would be a surprising way to spend
- * the user's money. The roll-up refreshes next time a meeting on that day is
- * summarized or deleted.
+ * Applies user corrections to a summary. The day roll-up's *narrative* (overview
+ * and highlights) is NOT regenerated here — that costs an LLM call. But the
+ * roll-up's action items are only ever a mechanical flatten of each meeting's
+ * items (never LLM-authored), so they are refreshed cheaply and for free so the
+ * daily view matches the edit immediately. Pass `day` to enable that refresh.
+ *
+ * Editing also works on a meeting that failed to auto-summarize: if the user
+ * supplies content by hand, the meeting is promoted to "completed" — they have
+ * taken ownership of the summary.
  */
 export async function updateMeetingSummary(input: {
   meetingId: number;
@@ -268,23 +272,50 @@ export async function updateMeetingSummary(input: {
   keyTopics: KeyTopic[];
   decisions: Decision[];
   actionItems: ActionItem[];
+  day?: LocalDay;
 }) {
   const existing = await db.getMeeting(input.meetingId);
   if (!existing) throw new ServiceError("NOT_FOUND", "Meeting not found");
 
   const overview = input.summaryOverview.trim();
-  if (!overview) {
-    throw new ServiceError("BAD_REQUEST", "The summary overview cannot be empty");
+  const keyTopics = input.keyTopics.filter(item => item.topic.trim());
+  const decisions = input.decisions.filter(item => item.decision.trim());
+  const actionItems = input.actionItems.filter(item => item.task.trim());
+
+  // Empty overview is allowed (e.g. jotting action items onto a failed
+  // meeting), but a wholly empty summary is not — that is just a blank record.
+  const hasContent =
+    Boolean(overview) || keyTopics.length > 0 || decisions.length > 0 || actionItems.length > 0;
+  if (!hasContent) {
+    throw new ServiceError("BAD_REQUEST", "Add a summary or at least one action item before saving.");
   }
 
-  return db.updateMeetingSummaryContent({
+  const saved = await db.updateMeetingSummaryContent({
     meetingId: input.meetingId,
     summaryOverview: overview,
-    // Drop rows the user blanked out rather than persisting empty entries.
-    keyTopics: input.keyTopics.filter(item => item.topic.trim()),
-    decisions: input.decisions.filter(item => item.decision.trim()),
-    actionItems: input.actionItems.filter(item => item.task.trim()),
+    keyTopics,
+    decisions,
+    actionItems,
+    // A hand-edited failed meeting becomes completed.
+    markCompleted: existing.status !== "completed",
   });
+
+  // Free, LLM-less refresh of the day roll-up's action items.
+  if (input.day) {
+    const existingDaily = await db.getDailySummary(input.day.localDate);
+    if (existingDaily) {
+      const dayMeetings = await db.listCompletedMeetingsBetween({
+        dayStartAtMs: input.day.dayStartAtMs,
+        dayEndAtMs: input.day.dayEndAtMs,
+      });
+      await db.updateDailySummaryActionItems({
+        localDate: input.day.localDate,
+        actionItems: buildDailySummaryFallback(dayMeetings).actionItems,
+      });
+    }
+  }
+
+  return saved;
 }
 
 /**

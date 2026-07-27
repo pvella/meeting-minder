@@ -9,7 +9,7 @@ import { Slider } from "@/components/ui/slider";
 import { useMeetingRecorder } from "@/hooks/useMeetingRecorder";
 import { formatTimer } from "@/lib/dates";
 import { useMeetings } from "@/lib/queries";
-import { AlertCircle, CheckCircle2, CircleStop, LockKeyhole, Mic2, RefreshCw, Scissors, ShieldCheck, Sparkles, Waves } from "lucide-react";
+import { AlertCircle, CheckCircle2, CircleStop, LockKeyhole, Mic2, RefreshCw, Scissors, ShieldCheck, Sparkles } from "lucide-react";
 import { useState } from "react";
 import { Link } from "wouter";
 
@@ -95,11 +95,23 @@ export default function Home() {
           <Card className="rounded-[1.5rem] border-0 p-6 shadow-sm ring-1 ring-border/60">
             <div className="flex items-start justify-between gap-4">
               <div><p className="eyebrow">Automatic split</p><h2 className="mt-2 text-lg font-semibold">Silence boundary</h2></div>
-              <Waves className="h-5 w-5 text-primary" />
+              <Button
+                type="button"
+                variant={recorder.autoSplitEnabled ? "default" : "outline"}
+                size="sm"
+                className="rounded-full"
+                onClick={() => recorder.setAutoSplitEnabled(!recorder.autoSplitEnabled)}
+              >
+                {recorder.autoSplitEnabled ? "On" : "Off"}
+              </Button>
             </div>
-            <p className="mt-3 text-sm leading-6 text-muted-foreground">After speech has started, sustained silence closes the current meeting and begins a fresh one.</p>
-            <div className="mt-6 flex items-center gap-4">
-              <Slider value={[recorder.silenceThresholdSeconds]} min={8} max={30} step={1} onValueChange={value => recorder.setSilenceThresholdSeconds(value[0] ?? 12)} />
+            <p className="mt-3 text-sm leading-6 text-muted-foreground">
+              {recorder.autoSplitEnabled
+                ? "After speech has started, sustained silence closes the current meeting and begins a fresh one. Turn off if you're recording a single meeting with natural pauses."
+                : "Off — everything you record stays in one meeting until you stop or split manually."}
+            </p>
+            <div className={`mt-6 flex items-center gap-4 ${recorder.autoSplitEnabled ? "" : "pointer-events-none opacity-40"}`}>
+              <Slider value={[recorder.silenceThresholdSeconds]} min={15} max={60} step={5} onValueChange={value => recorder.setSilenceThresholdSeconds(value[0] ?? 25)} />
               <span className="w-12 text-right text-sm font-bold tabular-nums">{recorder.silenceThresholdSeconds}s</span>
             </div>
             {recorder.lastSplitReason ? <p className="mt-4 flex items-center gap-2 text-xs font-semibold text-primary"><CheckCircle2 className="h-3.5 w-3.5" /> Last split: {recorder.lastSplitReason === "silence" ? "silence detected" : "manual"}</p> : null}

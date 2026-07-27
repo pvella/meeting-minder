@@ -377,6 +377,7 @@ export async function updateMeetingSummaryContent(input: {
   keyTopics: KeyTopic[];
   decisions: Decision[];
   actionItems: ActionItem[];
+  markCompleted?: boolean;
 }) {
   await db
     .update(meetings)
@@ -386,9 +387,26 @@ export async function updateMeetingSummaryContent(input: {
       decisions: input.decisions,
       actionItems: input.actionItems,
       updatedAtMs: Date.now(),
+      ...(input.markCompleted ? { status: "completed" as const, failureReason: null } : {}),
     })
     .where(eq(meetings.id, input.meetingId));
   return getMeeting(input.meetingId);
+}
+
+/**
+ * Refresh only the action-items list on a day's roll-up (leaving the
+ * LLM-authored overview and highlights untouched). Cheap: daily action items
+ * are a mechanical flatten of meeting items, so keeping them in sync after an
+ * edit costs no API call.
+ */
+export async function updateDailySummaryActionItems(input: {
+  localDate: string;
+  actionItems: DailySummaryContent["actionItems"];
+}) {
+  await db
+    .update(dailySummaries)
+    .set({ actionItems: input.actionItems, updatedAtMs: Date.now() })
+    .where(eq(dailySummaries.localDate, input.localDate));
 }
 
 export async function updateMeetingActionItems(input: {

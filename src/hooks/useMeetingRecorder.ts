@@ -84,7 +84,8 @@ export function useMeetingRecorder() {
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [transcriptionError, setTranscriptionError] = useState<string | null>(null);
   const [failedChunkCount, setFailedChunkCount] = useState(0);
-  const [silenceThresholdSeconds, setSilenceThresholdSeconds] = useState(12);
+  const [silenceThresholdSeconds, setSilenceThresholdSeconds] = useState(25);
+  const [autoSplitEnabled, setAutoSplitEnabled] = useState(true);
   const [lastSplitReason, setLastSplitReason] = useState<SplitReason | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -109,6 +110,7 @@ export function useMeetingRecorder() {
   const voiceDetectorRef = useRef<VoiceActivityDetector | null>(null);
   const lastLevelPaintAtRef = useRef(0);
   const silenceThresholdSecondsRef = useRef(silenceThresholdSeconds);
+  const autoSplitEnabledRef = useRef(autoSplitEnabled);
   const wakeLockRef = useRef<WakeLockSentinel | null>(null);
   const performSplitRef = useRef<(reason: SplitReason) => Promise<void>>(
     async () => undefined,
@@ -360,6 +362,7 @@ export function useMeetingRecorder() {
         if (detector) {
           detector.sample(rms, now);
           if (
+            autoSplitEnabledRef.current &&
             detector.shouldSplit({
               nowMs: now,
               meetingStartedAtMs: meetingStartedAtRef.current,
@@ -629,6 +632,10 @@ export function useMeetingRecorder() {
     silenceThresholdSecondsRef.current = silenceThresholdSeconds;
   }, [silenceThresholdSeconds]);
 
+  useEffect(() => {
+    autoSplitEnabledRef.current = autoSplitEnabled;
+  }, [autoSplitEnabled]);
+
   // Android releases the wake lock whenever the page is hidden, so it has to be
   // taken again on return or the screen will sleep mid-meeting.
   useEffect(() => {
@@ -679,6 +686,8 @@ export function useMeetingRecorder() {
     failedChunkCount,
     silenceThresholdSeconds,
     setSilenceThresholdSeconds,
+    autoSplitEnabled,
+    setAutoSplitEnabled,
     lastSplitReason,
     error,
     startRecording,

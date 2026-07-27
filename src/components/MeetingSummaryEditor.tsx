@@ -101,7 +101,15 @@ export function MeetingSummaryEditor({
         </Button>
         <Button
           type="submit"
-          disabled={isSaving || !draft.summaryOverview.trim()}
+          disabled={
+            isSaving ||
+            !(
+              draft.summaryOverview.trim() ||
+              draft.keyTopics.some(t => t.topic.trim()) ||
+              draft.decisions.some(d => d.decision.trim()) ||
+              draft.actionItems.some(a => a.task.trim())
+            )
+          }
           className="rounded-xl"
         >
           <Save className="mr-2 h-4 w-4" />

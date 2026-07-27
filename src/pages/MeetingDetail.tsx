@@ -189,6 +189,22 @@ export default function MeetingDetail() {
           >
             <ArrowLeft className="h-4 w-4" /> All meetings
           </Link>
+          {editingSummary ? (
+          <MeetingSummaryEditor
+            initial={{
+              summaryOverview: meeting.summaryOverview ?? "",
+              keyTopics: meeting.keyTopics ?? [],
+              decisions: meeting.decisions ?? [],
+              actionItems: meeting.actionItems ?? [],
+            }}
+            isSaving={updateSummary.isPending}
+            error={updateSummary.error?.message ?? null}
+            onCancel={() => setEditingSummary(false)}
+            onSave={(draft: SummaryDraft) =>
+              updateSummary.mutate({ meetingId, ...draft, day })
+            }
+          />
+          ) : (
           <Card className="empty-panel flex min-h-[420px] flex-col items-center justify-center rounded-[2rem] p-8 text-center">
             <div className="brand-mark h-14 w-14">
               {isFailed ? (
@@ -229,8 +245,18 @@ export default function MeetingDetail() {
                 {retrySummary.error.message}
               </p>
             ) : null}
+            {isFailed ? (
+              <Button
+                variant="outline"
+                className="mt-3 rounded-full bg-card"
+                onClick={() => setEditingSummary(true)}
+              >
+                <PencilLine className="mr-2 h-4 w-4" /> Add details manually
+              </Button>
+            ) : null}
             <div className="mt-8">{deleteButton}</div>
           </Card>
+          )}
         </div>
         {deleteDialog}
       </div>
@@ -350,7 +376,7 @@ export default function MeetingDetail() {
             error={updateSummary.error?.message ?? null}
             onCancel={() => setEditingSummary(false)}
             onSave={(draft: SummaryDraft) =>
-              updateSummary.mutate({ meetingId, ...draft })
+              updateSummary.mutate({ meetingId, ...draft, day })
             }
           />
         ) : (

@@ -18,3 +18,7 @@ android/app/release/
 # Never commit the OpenAI key
 .env
 .env.local
+
+# Android signing (local only)
+android/keystore.properties
+*.jks

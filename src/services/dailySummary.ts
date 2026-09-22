@@ -1,6 +1,8 @@
 import { z } from "zod";
 import type { DailySummaryContent } from "@shared/meeting";
+import { shouldUseDemoAi } from "@/lib/demoMode";
 import { invokeLLM } from "@/lib/openai";
+import { getApiKey } from "@/lib/settings";
 import type { Meeting } from "@/lib/schema";
 
 const dailySummarySchema = z.object({
@@ -52,6 +54,11 @@ export async function generateDailySummary(
   meetings: Meeting[],
 ): Promise<DailySummaryContent> {
   if (meetings.length === 0) return buildDailySummaryFallback(meetings);
+
+  // Demo mode has no LLM key; use the deterministic roll-up (same as offline fallback).
+  if (await shouldUseDemoAi(Boolean(await getApiKey()))) {
+    return buildDailySummaryFallback(meetings);
+  }
 
   try {
     const response = await invokeLLM({

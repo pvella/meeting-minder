@@ -1,6 +1,11 @@
 import { z } from "zod";
 import type { MeetingSummary } from "@shared/meeting";
+import {
+  buildDemoMeetingSummary,
+  shouldUseDemoAi,
+} from "@/lib/demoMode";
 import { invokeLLM } from "@/lib/openai";
+import { getApiKey } from "@/lib/settings";
 import type { TranscriptSegment } from "@/lib/schema";
 
 export const meetingSummarySchema = z.object({
@@ -123,6 +128,10 @@ export function parseMeetingSummary(content: string): MeetingSummary {
 export async function generateMeetingSummary(
   segments: TranscriptSegment[],
 ): Promise<MeetingSummary> {
+  if (await shouldUseDemoAi(Boolean(await getApiKey()))) {
+    return buildDemoMeetingSummary();
+  }
+
   const transcript = transcriptToPrompt(segments);
   if (!transcript.trim()) {
     return {

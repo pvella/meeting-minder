@@ -1,4 +1,8 @@
 import { PageHeader } from "@/components/PageHeader";
+import {
+  isDemoModeEnabled,
+  setDemoModeEnabled,
+} from "@/lib/demoMode";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -36,14 +40,21 @@ export default function Settings() {
   const { data, isLoading } = useQuery({
     queryKey: ["settingsForm"],
     queryFn: async () => {
-      const [key, baseUrl, summaryModel, transcriptionModel] =
+      const [key, baseUrl, summaryModel, transcriptionModel, demoMode] =
         await Promise.all([
           getApiKey(),
           getBaseUrl(),
           getSummaryModel(),
           getTranscriptionModel(),
+          isDemoModeEnabled(),
         ]);
-      return { hasKey: Boolean(key), baseUrl, summaryModel, transcriptionModel };
+      return {
+        hasKey: Boolean(key),
+        demoMode: demoMode && !key,
+        baseUrl,
+        summaryModel,
+        transcriptionModel,
+      };
     },
   });
 
@@ -80,7 +91,10 @@ export default function Settings() {
       await setBaseUrl(baseUrl.trim());
       await setSummaryModel(summaryModel.trim() || DEFAULT_SUMMARY_MODEL);
       await setTranscriptionModel(transcriptionModel.trim());
-      if (newKey) await setApiKey(newKey);
+      if (newKey) {
+        await setApiKey(newKey);
+        await setDemoModeEnabled(false);
+      }
       setKey("");
       await queryClient.invalidateQueries({ queryKey: ["settingsForm"] });
       await queryClient.invalidateQueries({ queryKey: ["apiKeyStatus"] });
@@ -97,7 +111,16 @@ export default function Settings() {
   async function handleClearKey() {
     await clearApiKey();
     await queryClient.invalidateQueries({ queryKey: ["apiKeyStatus"] });
+    await queryClient.invalidateQueries({ queryKey: ["settingsForm"] });
     toast.success("API key removed.");
+    setLocation("/");
+  }
+
+  async function handleExitDemo() {
+    await setDemoModeEnabled(false);
+    await queryClient.invalidateQueries({ queryKey: ["apiKeyStatus"] });
+    await queryClient.invalidateQueries({ queryKey: ["settingsForm"] });
+    toast.success("Demo mode turned off. Add an API key to use live AI.");
     setLocation("/");
   }
 
@@ -166,6 +189,24 @@ export default function Settings() {
           <p className="text-sm text-muted-foreground">Loading…</p>
         ) : (
           <div className="flex flex-col gap-8">
+            {data?.demoMode ? (
+              <section className="rounded-2xl border border-amber-500/40 bg-amber-500/10 p-4">
+                <h2 className="font-display text-lg">Demo mode</h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Play Store review path: transcripts and summaries are sample
+                  content generated on this device. No OpenAI calls are made.
+                  Add an API key below to switch to live AI.
+                </p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="mt-3 rounded-xl"
+                  onClick={() => void handleExitDemo()}
+                >
+                  Exit demo mode
+                </Button>
+              </section>
+            ) : null}
             {/* Connection */}
             <section className="flex flex-col gap-4">
               <div>

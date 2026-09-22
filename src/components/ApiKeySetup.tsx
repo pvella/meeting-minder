@@ -1,6 +1,10 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
+  isDemoModeEnabled,
+  setDemoModeEnabled,
+} from "@/lib/demoMode";
+import {
   DEFAULT_BASE_URL,
   DEFAULT_SUMMARY_MODEL,
   DEFAULT_TRANSCRIPTION_MODEL,
@@ -22,7 +26,15 @@ const API_KEY_STATUS = ["apiKeyStatus"] as const;
 export function useApiKeyStatus() {
   return useQuery({
     queryKey: API_KEY_STATUS,
-    queryFn: async () => ({ configured: Boolean(await getApiKey()) }),
+    queryFn: async () => {
+      const key = await getApiKey();
+      const demo = await isDemoModeEnabled();
+      return {
+        configured: Boolean(key) || demo,
+        hasKey: Boolean(key),
+        demoMode: demo && !key,
+      };
+    },
   });
 }
 
@@ -48,6 +60,7 @@ export function useSaveApiKey() {
       // Key last: it is what gates the app, so it becomes "configured" only
       // once the endpoint settings are already persisted.
       await setApiKey(key);
+      await setDemoModeEnabled(false);
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: API_KEY_STATUS }),
   });
@@ -64,7 +77,20 @@ export function ApiKeySetup({ onSaved }: { onSaved?: () => void }) {
   const [baseUrl, setBaseUrlValue] = useState("");
   const [summaryModel, setSummaryModelValue] = useState("");
   const [transcriptionModel, setTranscriptionModelValue] = useState("");
+  const [demoStarting, setDemoStarting] = useState(false);
   const save = useSaveApiKey();
+  const queryClient = useQueryClient();
+
+  async function startDemo() {
+    setDemoStarting(true);
+    try {
+      await setDemoModeEnabled(true);
+      await queryClient.invalidateQueries({ queryKey: API_KEY_STATUS });
+      onSaved?.();
+    } finally {
+      setDemoStarting(false);
+    }
+  }
 
   // Prefill the advanced fields from any previously saved values (this screen
   // doubles as the "change key / endpoint" editor after a reset).
@@ -236,6 +262,24 @@ export function ApiKeySetup({ onSaved }: { onSaved?: () => void }) {
             {save.isPending ? "Saving…" : "Save key and continue"}
           </Button>
         </form>
+
+        <div className="flex flex-col gap-3 border-t border-border/60 pt-6">
+          <p className="text-center text-sm text-muted-foreground">
+            Reviewing for the Play Store? You can explore the app with sample
+            transcripts and summaries — no API key required.
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            size="lg"
+            className="h-12 w-full rounded-xl"
+            disabled={demoStarting}
+            onClick={() => void startDemo()}
+          >
+            <Sparkles className="mr-2 h-4 w-4" />
+            {demoStarting ? "Starting…" : "Continue in demo mode"}
+          </Button>
+        </div>
       </div>
     </div>
   );

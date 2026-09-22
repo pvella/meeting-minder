@@ -1,5 +1,10 @@
 import { fetchWithBackoff } from "./openai";
 import {
+  buildDemoWhisperResponse,
+  shouldUseDemoAi,
+} from "./demoMode";
+import {
+  getApiKey,
   getTranscriptionModel,
   requireApiKey,
   transcriptionsUrl,
@@ -74,6 +79,13 @@ export async function transcribeAudioBlob(input: {
   language?: string;
   prompt?: string;
 }): Promise<WhisperResponse | TranscriptionError> {
+  // Play review / demo: canned transcript, no network (see demoMode.ts).
+  if (await shouldUseDemoAi(Boolean(await getApiKey()))) {
+    const durationHint =
+      input.audio.size > 0 ? Math.max(8, input.audio.size / 4000) : undefined;
+    return buildDemoWhisperResponse(durationHint);
+  }
+
   let apiKey: string;
   try {
     apiKey = await requireApiKey();
